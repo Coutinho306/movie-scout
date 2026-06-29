@@ -14,3 +14,11 @@ wheels/
 
 # temp
 __temp/
+
+# data — keep folders, ignore contents
+data/letterboxd_export/*
+data/taste_profile.json
+data/taste_profile.npy
+
+# eval runs
+eval/runs/*

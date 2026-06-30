@@ -18,7 +18,12 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 DISCOVERY_GENRES = [18, 28, 53]  # Drama, Action, Thriller
 
 
-def discover_candidate_tmdb_ids(api_key: str, *, pages: int = 5) -> list[int]:
+def discover_candidate_tmdb_ids(
+    api_key: str,
+    *,
+    pages: int = 5,
+    genre_ids: list[int] = DISCOVERY_GENRES,
+) -> list[int]:
     ids: set[int] = set()
 
     for page in range(1, pages + 1):
@@ -33,7 +38,7 @@ def discover_candidate_tmdb_ids(api_key: str, *, pages: int = 5) -> list[int]:
             ids.add(r["id"])
         time.sleep(0.25)
 
-    for genre_id in DISCOVERY_GENRES:
+    for genre_id in genre_ids:
         for page in range(1, pages + 1):
             resp = requests.get(
                 f"{TMDB_BASE}/discover/movie",
@@ -99,12 +104,15 @@ def load_tmdb_movies(
     watched_tmdb_ids: set[int],
     *,
     discovery_pages: int = 5,
+    genre_ids: list[int] = DISCOVERY_GENRES,
 ) -> int:
     from qdrant_client.models import PointStruct
 
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
 
-    candidate_ids = discover_candidate_tmdb_ids(api_key, pages=discovery_pages)
+    candidate_ids = discover_candidate_tmdb_ids(
+        api_key, pages=discovery_pages, genre_ids=genre_ids
+    )
     candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
     _logger.info('{"step":"tmdb_movies_candidates","count":%d}', len(candidate_ids))
 

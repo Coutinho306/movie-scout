@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from ingestion.chunking import build_movie_embed_text
 from ingestion.embedding import embed_texts
 from ingestion.models import (
+    TMDB_GENRE_NAME_TO_ID,
     LetterboxdFilm,
     TasteProfile,
     TmdbMovieMetadata,
@@ -183,11 +184,28 @@ def compute_centroid(
     return [x / norm for x in centroid]
 
 
-def main() -> None:
-    api_key = os.environ["TMDB_API_KEY"]
-    export_dir = Path("data/letterboxd_export")
-    output_path = Path("data/taste_profile.json")
+def rank_genre_ids(
+    genre_weights: dict[str, float], *, top_n: int
+) -> list[int]:
+    """Map weighted genre names to TMDB IDs, return the top-N by weight."""
+    ranked = sorted(genre_weights.items(), key=lambda kv: kv[1], reverse=True)
+    ids: list[int] = []
+    for name, _ in ranked:
+        genre_id = TMDB_GENRE_NAME_TO_ID.get(name)
+        if genre_id is not None and genre_id not in ids:
+            ids.append(genre_id)
+        if len(ids) >= top_n:
+            break
+    return ids
 
+
+def compute_taste_profile(
+    api_key: str,
+    *,
+    export_dir: Path = Path("data/letterboxd_export"),
+    output_path: Path = Path("data/taste_profile.json"),
+    top_n: int = 4,
+) -> TasteProfile:
     _logger.info('{"step":"load_csvs"}')
     pool, _ = load_letterboxd_csvs(export_dir)
     _logger.info('{"step":"loaded","film_count":%d}', len(pool))
@@ -196,8 +214,8 @@ def main() -> None:
     weighted_films = [(f, w) for f, w in weighted_films if w > 0.0]
 
     texts_to_embed: list[str] = []
-    metadata_list: list[TmdbMovieMetadata] = []
     weights: list[float] = []
+    genre_weights: dict[str, float] = {}
 
     for film, weight in weighted_films:
         _logger.info('{"step":"search_tmdb","film":"%s","year":%d}', film.name, film.year)
@@ -213,13 +231,15 @@ def main() -> None:
             continue
 
         texts_to_embed.append(metadata.embed_text)
-        metadata_list.append(metadata)
         weights.append(weight)
+        for genre in metadata.genres:
+            genre_weights[genre] = genre_weights.get(genre, 0.0) + weight
 
     _logger.info('{"step":"embedding","count":%d}', len(texts_to_embed))
     vectors = embed_texts(texts_to_embed)
 
     centroid = compute_centroid(vectors, weights)
+    top_genre_ids = rank_genre_ids(genre_weights, top_n=top_n)
 
     rated = sum(1 for f, _ in weighted_films if f.source == "rated")
     liked = sum(1 for f, _ in weighted_films if f.source == "liked")
@@ -229,17 +249,25 @@ def main() -> None:
         film_count=len(vectors),
         rated_count=rated,
         liked_count=liked,
+        top_genre_ids=top_genre_ids,
+        genre_weights=genre_weights,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(profile.model_dump(), indent=2))
     _logger.info(
-        '{"step":"done","film_count":%d,"centroid_dim":%d,"output":"%s"}',
+        '{"step":"done","film_count":%d,"centroid_dim":%d,"top_genre_ids":%s,"output":"%s"}',
         profile.film_count,
         len(centroid),
+        json.dumps(top_genre_ids),
         str(output_path),
     )
+    return profile
+
+
+def main() -> None:
+    compute_taste_profile(os.environ["TMDB_API_KEY"])
 
 
 if __name__ == "__main__":

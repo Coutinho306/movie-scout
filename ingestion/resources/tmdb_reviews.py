@@ -9,7 +9,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 
 from ingestion.chunking import chunk_review
-from ingestion.embedding import embed_texts
+from ingestion.embedding import Embedder
 
 _logger = logging.getLogger(__name__)
 TMDB_BASE = "https://api.themoviedb.org/3"
@@ -32,6 +32,11 @@ def load_tmdb_reviews(
     qdrant_url: str,
     qdrant_api_key: str,
     candidate_tmdb_ids: list[int],
+    embedder: Embedder,
+    collection_name: str,
+    *,
+    chunk_max_tokens: int = 300,
+    chunk_overlap_tokens: int = 50,
 ) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
     loaded = 0
@@ -46,15 +51,19 @@ def load_tmdb_reviews(
             if not content.strip():
                 continue
 
-            chunks = chunk_review(content)
-            vectors = embed_texts(chunks)
+            chunks = chunk_review(
+                content,
+                max_tokens=chunk_max_tokens,
+                overlap_tokens=chunk_overlap_tokens,
+            )
+            vectors = embedder.embed_texts(chunks)
 
             for chunk_index, (chunk_text, vector) in enumerate(zip(chunks, vectors)):
                 point_id = str(
                     uuid.uuid5(uuid.NAMESPACE_DNS, f"{tmdb_id}_{author}_{chunk_index}")
                 )
                 client.upsert(
-                    collection_name="tmdb_reviews",
+                    collection_name=collection_name,
                     points=[
                         PointStruct(
                             id=point_id,

@@ -10,7 +10,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 
 from ingestion.chunking import build_movie_embed_text
-from ingestion.embedding import embed_single
+from ingestion.embedding import Embedder
 from ingestion.models import TmdbMovieMetadata
 
 _logger = logging.getLogger(__name__)
@@ -102,12 +102,12 @@ def load_tmdb_movies(
     qdrant_url: str,
     qdrant_api_key: str,
     watched_tmdb_ids: set[int],
+    embedder: Embedder,
+    collection_name: str,
     *,
     discovery_pages: int = 5,
     genre_ids: list[int] = DISCOVERY_GENRES,
 ) -> int:
-    from qdrant_client.models import PointStruct
-
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
 
     candidate_ids = discover_candidate_tmdb_ids(
@@ -123,11 +123,11 @@ def load_tmdb_movies(
         if metadata is None:
             continue
 
-        vector = embed_single(metadata.embed_text)
+        vector = embedder.embed_single(metadata.embed_text)
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(tmdb_id)))
 
         client.upsert(
-            collection_name="tmdb_movies",
+            collection_name=collection_name,
             points=[
                 PointStruct(
                     id=point_id,

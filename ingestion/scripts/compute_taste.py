@@ -15,7 +15,7 @@ import requests
 from dotenv import load_dotenv
 
 from ingestion.chunking import build_movie_embed_text
-from ingestion.embedding import embed_texts
+from ingestion.embedding import Embedder
 from ingestion.models import (
     TMDB_GENRE_NAME_TO_ID,
     LetterboxdFilm,
@@ -202,6 +202,7 @@ def rank_genre_ids(
 def compute_taste_profile(
     api_key: str,
     *,
+    embedder: Embedder | None = None,
     export_dir: Path = Path("data/letterboxd_export"),
     output_path: Path = Path("data/taste_profile.json"),
     top_n: int = 4,
@@ -236,7 +237,11 @@ def compute_taste_profile(
             genre_weights[genre] = genre_weights.get(genre, 0.0) + weight
 
     _logger.info('{"step":"embedding","count":%d}', len(texts_to_embed))
-    vectors = embed_texts(texts_to_embed)
+    if embedder is None:
+        from ingestion.config import Settings
+        from ingestion.embedding import get_embedder
+        embedder = get_embedder(Settings())
+    vectors = embedder.embed_texts(texts_to_embed)
 
     centroid = compute_centroid(vectors, weights)
     top_genre_ids = rank_genre_ids(genre_weights, top_n=top_n)

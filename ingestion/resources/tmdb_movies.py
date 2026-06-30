@@ -24,7 +24,8 @@ def discover_candidate_tmdb_ids(api_key: str, *, pages: int = 5) -> list[int]:
     for page in range(1, pages + 1):
         resp = requests.get(
             f"{TMDB_BASE}/movie/popular",
-            params={"api_key": api_key, "page": page},
+            params={"page": page},
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=10,
         )
         resp.raise_for_status()
@@ -37,11 +38,11 @@ def discover_candidate_tmdb_ids(api_key: str, *, pages: int = 5) -> list[int]:
             resp = requests.get(
                 f"{TMDB_BASE}/discover/movie",
                 params={
-                    "api_key": api_key,
                     "sort_by": "popularity.desc",
                     "with_genres": genre_id,
                     "page": page,
                 },
+                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=10,
             )
             resp.raise_for_status()
@@ -57,7 +58,8 @@ def fetch_movie_metadata(
 ) -> Optional[TmdbMovieMetadata]:
     resp = requests.get(
         f"{TMDB_BASE}/movie/{tmdb_id}",
-        params={"api_key": api_key, "append_to_response": "credits,keywords"},
+        params={"append_to_response": "credits,keywords"},
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=10,
     )
     if resp.status_code != 200:

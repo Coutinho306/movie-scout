@@ -91,7 +91,8 @@ def search_tmdb(
 ) -> Optional[TmdbSearchResult]:
     resp = requests.get(
         f"{TMDB_BASE}/search/movie",
-        params={"api_key": api_key, "query": name, "year": year},
+        params={"query": name, "year": year},
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=10,
     )
     resp.raise_for_status()
@@ -117,7 +118,8 @@ def fetch_tmdb_metadata_for_taste(
 ) -> Optional[TmdbMovieMetadata]:
     resp = requests.get(
         f"{TMDB_BASE}/movie/{tmdb_id}",
-        params={"api_key": api_key, "append_to_response": "credits"},
+        params={"append_to_response": "credits"},
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=10,
     )
     if resp.status_code != 200:

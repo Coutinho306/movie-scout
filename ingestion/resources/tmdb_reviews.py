@@ -18,7 +18,8 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 def fetch_reviews(tmdb_id: int, api_key: str) -> list[dict]:
     resp = requests.get(
         f"{TMDB_BASE}/movie/{tmdb_id}/reviews",
-        params={"api_key": api_key, "page": 1},
+        params={"page": 1},
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=10,
     )
     if resp.status_code != 200:

@@ -22,3 +22,6 @@ data/taste_profile.npy
 
 # eval runs
 eval/runs/*
+
+# planning (local only)
+specs/

@@ -55,3 +55,51 @@ Additional flags:
 - `--chunk-overlap-tokens N` — token overlap between chunks (default 50).
 - `--rebuild` — drop and recreate this variant's collections before loading.
 - `--drop-variant` — delete this variant's collections and exit.
+
+## Eval
+
+Offline evaluation grid-searches retrieval and LLM knobs against a ground-truth
+set built from the held-out watchlist (`data/letterboxd_export/watchlist.csv`).
+
+### Step 1 — run retrieval grid
+
+```bash
+uv run python3 -m eval.cli retrieval
+```
+
+Reads `eval/grids/retrieval.yaml` and runs every cartesian combination of
+`top_k`, `variant`, `hybrid`, `rerank`, and `query_rewrite`. Writes results to
+`eval/runs/retrieval_<ts>.csv` and prints the winning config by `mean_ndcg_at_k`.
+The winner is saved to `eval/runs/best_retrieval.json` for the LLM grid.
+
+### Step 2 — run LLM grid
+
+```bash
+uv run python3 -m eval.cli llm
+```
+
+Requires `eval/runs/best_retrieval.json` (errors clearly if missing). Pins
+retrieval to the step-1 winner and varies `temperature` + prompt variant.
+Judges answers with RAGAS `Faithfulness`, `AnswerRelevancy`, and a custom
+`TasteMatch` score. Writes `eval/runs/llm_<ts>.csv`.
+
+### Run both in order
+
+```bash
+uv run python3 -m eval.cli all
+```
+
+### Outputs
+
+| File | Contents |
+|---|---|
+| `eval/runs/retrieval_<ts>.csv` | One row per retrieval config: precision, recall, MRR, nDCG, latency |
+| `eval/runs/best_retrieval.json` | Winning retrieval config (written by retrieval grid) |
+| `eval/runs/llm_<ts>.csv` | One row per LLM config: faithfulness, relevancy, taste_match |
+| `data/golden_set.json` | Cached ground-truth queries (gitignored; regenerated if absent) |
+
+### Reading the winning config
+
+`best_retrieval.json` contains the config id and full parameter set of the
+config with the highest `mean_ndcg_at_k`. Pass those parameters to the agent
+or set them as defaults in `retrieval/config.py` before shipping.

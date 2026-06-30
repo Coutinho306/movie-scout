@@ -1,15 +1,12 @@
-"""dlt resource: TMDB reviews — fetch, chunk, embed, load Qdrant."""
+"""TMDB reviews — fetch, chunk, embed, load Qdrant."""
 
 import logging
 import time
 import uuid
-from collections.abc import Iterator
 
 import requests
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-
-import dlt
 
 from ingestion.chunking import chunk_review
 from ingestion.embedding import embed_texts
@@ -29,13 +26,12 @@ def fetch_reviews(tmdb_id: int, api_key: str) -> list[dict]:
     return resp.json().get("results", [])
 
 
-@dlt.resource(name="tmdb_reviews", write_disposition="replace", primary_key=["tmdb_id", "chunk_index"])
-def tmdb_reviews_resource(
+def load_tmdb_reviews(
     api_key: str,
     qdrant_url: str,
     qdrant_api_key: str,
     candidate_tmdb_ids: list[int],
-) -> Iterator[dict]:
+) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
     loaded = 0
 
@@ -73,10 +69,6 @@ def tmdb_reviews_resource(
                     ],
                 )
                 loaded += 1
-                yield {
-                    "tmdb_id": tmdb_id,
-                    "chunk_index": chunk_index,
-                    "status": "loaded",
-                }
 
     _logger.info('{"step":"tmdb_reviews_done","loaded":%d}', loaded)
+    return loaded

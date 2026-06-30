@@ -1,16 +1,13 @@
-"""dlt resource: TMDB candidate pool — fetch metadata, embed, load Qdrant."""
+"""TMDB candidate pool — fetch metadata, embed, load Qdrant."""
 
 import logging
 import time
 import uuid
-from collections.abc import Iterator
 from typing import Optional
 
 import requests
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-
-import dlt
 
 from ingestion.chunking import build_movie_embed_text
 from ingestion.embedding import embed_single
@@ -93,15 +90,14 @@ def fetch_movie_metadata(
     return metadata
 
 
-@dlt.resource(name="tmdb_movies", write_disposition="replace", primary_key="tmdb_id")
-def tmdb_movies_resource(
+def load_tmdb_movies(
     api_key: str,
     qdrant_url: str,
     qdrant_api_key: str,
     watched_tmdb_ids: set[int],
     *,
     discovery_pages: int = 5,
-) -> Iterator[dict]:
+) -> int:
     from qdrant_client.models import PointStruct
 
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
@@ -143,6 +139,6 @@ def tmdb_movies_resource(
             ],
         )
         loaded += 1
-        yield {"tmdb_id": metadata.tmdb_id, "title": metadata.title, "status": "loaded"}
 
     _logger.info('{"step":"tmdb_movies_done","loaded":%d}', loaded)
+    return loaded

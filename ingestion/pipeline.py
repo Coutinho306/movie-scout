@@ -1,19 +1,18 @@
-"""Entry point for the dlt ingestion pipeline."""
+"""Entry point for the TMDB ingestion pipeline."""
 
 import logging
 import os
 from pathlib import Path
 
-import dlt
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
 from ingestion.resources.tmdb_movies import (
     discover_candidate_tmdb_ids,
-    tmdb_movies_resource,
+    load_tmdb_movies,
 )
-from ingestion.resources.tmdb_reviews import tmdb_reviews_resource
+from ingestion.resources.tmdb_reviews import load_tmdb_reviews
 from ingestion.scripts.compute_taste import load_letterboxd_csvs, search_tmdb
 
 load_dotenv()
@@ -74,36 +73,30 @@ def run_pipeline(
     export_dir = Path("data/letterboxd_export")
     watched_tmdb_ids = load_watched_tmdb_ids(export_dir, tmdb_api_key)
 
-    pipeline = dlt.pipeline(
-        pipeline_name="movie_scout",
-        destination="duckdb",
-        dataset_name="ingestion_state",
-    )
-
-    _logger.info('{"step":"movies_resource_start"}')
-    pipeline.run(
-        tmdb_movies_resource(
-            api_key=tmdb_api_key,
-            qdrant_url=qdrant_url,
-            qdrant_api_key=qdrant_api_key,
-            watched_tmdb_ids=watched_tmdb_ids,
-            discovery_pages=discovery_pages,
-        )
+    _logger.info('{"step":"movies_load_start"}')
+    movies_loaded = load_tmdb_movies(
+        api_key=tmdb_api_key,
+        qdrant_url=qdrant_url,
+        qdrant_api_key=qdrant_api_key,
+        watched_tmdb_ids=watched_tmdb_ids,
+        discovery_pages=discovery_pages,
     )
 
     candidate_ids = discover_candidate_tmdb_ids(tmdb_api_key, pages=discovery_pages)
     candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
 
-    _logger.info('{"step":"reviews_resource_start","candidates":%d}', len(candidate_ids))
-    pipeline.run(
-        tmdb_reviews_resource(
-            api_key=tmdb_api_key,
-            qdrant_url=qdrant_url,
-            qdrant_api_key=qdrant_api_key,
-            candidate_tmdb_ids=candidate_ids,
-        )
+    _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
+    reviews_loaded = load_tmdb_reviews(
+        api_key=tmdb_api_key,
+        qdrant_url=qdrant_url,
+        qdrant_api_key=qdrant_api_key,
+        candidate_tmdb_ids=candidate_ids,
     )
-    _logger.info('{"step":"pipeline_complete"}')
+    _logger.info(
+        '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
+        movies_loaded,
+        reviews_loaded,
+    )
 
 
 if __name__ == "__main__":

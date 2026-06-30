@@ -271,6 +271,10 @@ def compute_taste_profile(
     return profile
 
 
+def load_taste_profile(path: Path = Path("data/taste_profile.json")) -> TasteProfile:
+    return TasteProfile.model_validate_json(path.read_text())
+
+
 def main() -> None:
     compute_taste_profile(os.environ["TMDB_API_KEY"])
 

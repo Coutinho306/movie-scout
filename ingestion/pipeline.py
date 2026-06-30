@@ -118,7 +118,6 @@ def run_pipeline(
     settings: Settings,
     discovery_pages: int = 5,
     rebuild: bool = False,
-    drop_variant_flag: bool = False,
     refresh_taste: bool = False,
     skip_taste: bool = False,
 ) -> None:
@@ -133,11 +132,6 @@ def run_pipeline(
     )
 
     client = get_qdrant_client(qdrant_url, qdrant_api_key)
-
-    if drop_variant_flag:
-        drop_variant(client, settings)
-        _logger.info('{"step":"drop_variant_done"}')
-        return
 
     if rebuild:
         rebuild_collections(client, settings)
@@ -190,32 +184,9 @@ def run_pipeline(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="TMDB ingestion pipeline")
     parser.add_argument(
-        "--embedder",
-        choices=["openai-3-small", "openai-3-large", "minilm"],
-        default=None,
-        help="embedding model variant (default: openai-3-small or EMBEDDER env var)",
-    )
-    parser.add_argument(
-        "--chunk-max-tokens",
-        type=int,
-        default=None,
-        help="max tokens per review chunk (default: 300 or CHUNK_MAX_TOKENS env var)",
-    )
-    parser.add_argument(
-        "--chunk-overlap-tokens",
-        type=int,
-        default=None,
-        help="overlap tokens between review chunks (default: 50 or CHUNK_OVERLAP_TOKENS env var)",
-    )
-    parser.add_argument(
         "--rebuild",
         action="store_true",
-        help="drop and recreate this variant's Qdrant collections before loading",
-    )
-    parser.add_argument(
-        "--drop-variant",
-        action="store_true",
-        help="delete this variant's Qdrant collections and exit",
+        help="drop and recreate Qdrant collections before loading",
     )
     parser.add_argument(
         "--refresh-taste",
@@ -232,24 +203,13 @@ def _parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = _parse_args()
-    _settings = Settings()
-    # CLI overrides take precedence over env vars
-    if args.embedder is not None:
-        _settings = _settings.model_copy(update={"embedder": args.embedder})
-    if args.chunk_max_tokens is not None:
-        _settings = _settings.model_copy(update={"chunk_max_tokens": args.chunk_max_tokens})
-    if args.chunk_overlap_tokens is not None:
-        _settings = _settings.model_copy(
-            update={"chunk_overlap_tokens": args.chunk_overlap_tokens}
-        )
     run_pipeline(
         tmdb_api_key=os.environ["TMDB_API_KEY"],
         openai_api_key=os.environ["OPENAI_API_KEY"],
         qdrant_url=os.environ["QDRANT_URL"],
         qdrant_api_key=os.environ["QDRANT_API_KEY"],
-        settings=_settings,
+        settings=Settings(),
         rebuild=args.rebuild,
-        drop_variant_flag=args.drop_variant,
         refresh_taste=args.refresh_taste,
         skip_taste=args.skip_taste,
     )

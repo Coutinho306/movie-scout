@@ -21,11 +21,11 @@ from agent.tools.vector_search_reviews import search_reviews_tool
 logger = logging.getLogger(__name__)
 
 
-def _build_rag_tools(collected: list[dict], region: str) -> list:
+def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> list:
     """Build ReAct tools bound to a run-local ``collected`` list for hit capture."""
 
     @tool
-    def search_movies(query: str, k: int = 10) -> list[dict]:
+    def search_movies(query: str, k: int = top_k) -> list[dict]:
         """Search the TMDB movie collection by semantic similarity. Returns movie dicts with tmdb_id, title, year, overview, genres."""
         hits = search_movies_tool(query, k=k)
         dicts = [h.model_dump() for h in hits]
@@ -65,8 +65,8 @@ def _build_rag_tools(collected: list[dict], region: str) -> list:
 
 def build_rag_agent(settings: AgentSettings, collected: list[dict]):
     """Construct a ReAct agent whose tools append hits to ``collected``."""
-    llm = ChatOpenAI(model=settings.model_agent, temperature=0)
-    tools = _build_rag_tools(collected, settings.watch_region)
+    llm = ChatOpenAI(model=settings.model_agent, temperature=settings.temperature)
+    tools = _build_rag_tools(collected, settings.watch_region, top_k=settings.top_k)
     return create_react_agent(llm, tools=tools, prompt=load_prompt("rag_system"))
 
 

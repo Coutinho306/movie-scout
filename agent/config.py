@@ -10,6 +10,8 @@ class AgentSettings(BaseSettings):
 
     model_agent: str = "gpt-4o-mini"
     model_orchestrator: str = "gpt-4o-mini"
+    temperature: float = 0.0
+    top_k: int = 10
     max_orchestrator_turns: int = 4
     tavily_max_results: int = 5
     watch_region: str = "BR"

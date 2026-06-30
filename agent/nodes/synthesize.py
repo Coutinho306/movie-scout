@@ -45,7 +45,7 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
     cfg = settings
     use_json_mode = cfg.model_agent not in cfg.reasoning_models
 
-    llm_kwargs: dict = {"model": cfg.model_agent, "temperature": 0}
+    llm_kwargs: dict = {"model": cfg.model_agent, "temperature": cfg.temperature}
     if use_json_mode:
         # json_object mode requires the word "json" in the prompt — the template has it.
         llm_kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}

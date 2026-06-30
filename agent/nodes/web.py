@@ -38,7 +38,7 @@ def _build_web_tools(collected: list[dict], tavily: TavilySearchTool, max_result
 
 def build_web_agent(settings: AgentSettings, collected: list[dict], tavily: TavilySearchTool):
     """Construct a ReAct agent whose tool appends web hits to ``collected``."""
-    llm = ChatOpenAI(model=settings.model_agent, temperature=0)
+    llm = ChatOpenAI(model=settings.model_agent, temperature=settings.temperature)
     tools = _build_web_tools(collected, tavily, settings.tavily_max_results)
     return create_react_agent(llm, tools=tools, prompt=load_prompt("web_system"))
 

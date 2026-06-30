@@ -20,8 +20,11 @@ data/letterboxd_export/*
 data/taste_profile.json
 data/taste_profile.npy
 
-# eval runs
+# eval runs — ignore CSV/JSON artifacts, keep source
 eval/runs/*
+!eval/runs/__init__.py
+!eval/runs/retrieval_grid.py
+!eval/runs/llm_grid.py
 
 # planning (local only)
 specs/

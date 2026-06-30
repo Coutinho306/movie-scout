@@ -24,10 +24,21 @@ class Settings(BaseSettings):
             return "3large"
         return f"minilm_c{self.chunk_max_tokens}o{self.chunk_overlap_tokens}"
 
+    def _is_default_variant(self) -> bool:
+        return (
+            self.embedder == "openai-3-small"
+            and self.chunk_max_tokens == 300
+            and self.chunk_overlap_tokens == 50
+        )
+
     @property
     def movies_collection(self) -> str:
+        if self._is_default_variant():
+            return "tmdb_movies"
         return f"tmdb_movies__{self.variant_suffix}"
 
     @property
     def reviews_collection(self) -> str:
+        if self._is_default_variant():
+            return "tmdb_reviews"
         return f"tmdb_reviews__{self.variant_suffix}"

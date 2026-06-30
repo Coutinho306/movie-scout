@@ -4,8 +4,15 @@ import logging
 
 import openai
 
-_client = openai.OpenAI()
+_client: openai.OpenAI | None = None
 _logger = logging.getLogger(__name__)
+
+
+def _get_client() -> openai.OpenAI:
+    global _client
+    if _client is None:
+        _client = openai.OpenAI()
+    return _client
 
 
 def embed_texts(
@@ -17,7 +24,7 @@ def embed_texts(
     results: list[list[float]] = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
-        response = _client.embeddings.create(input=batch, model=model)
+        response = _get_client().embeddings.create(input=batch, model=model)
         tokens = response.usage.total_tokens
         cost = tokens / 1000 * 0.00002
         _logger.info(

@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
+from ingestion.config import Settings
+from ingestion.embedding import Embedder, get_embedder
 from ingestion.models import TasteProfile
 from ingestion.resources.tmdb_movies import (
     DISCOVERY_GENRES,
@@ -34,38 +36,46 @@ def get_qdrant_client(url: str, api_key: str) -> QdrantClient:
     return QdrantClient(url=url, api_key=api_key)
 
 
-def ensure_collections(client: QdrantClient) -> None:
+def ensure_collections(client: QdrantClient, settings: Settings) -> None:
     existing = {c.name for c in client.get_collections().collections}
+    dim = settings.embedder_dim
+    movies_col = settings.movies_collection
+    reviews_col = settings.reviews_collection
 
-    if "tmdb_movies" not in existing:
+    if movies_col not in existing:
         client.create_collection(
-            collection_name="tmdb_movies",
-            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+            collection_name=movies_col,
+            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
         )
-    client.create_payload_index("tmdb_movies", "tmdb_id", PayloadSchemaType.KEYWORD)
-    client.create_payload_index("tmdb_movies", "year", PayloadSchemaType.INTEGER)
-    client.create_payload_index("tmdb_movies", "genres", PayloadSchemaType.KEYWORD)
-    client.create_payload_index("tmdb_movies", "vote_average", PayloadSchemaType.FLOAT)
+    client.create_payload_index(movies_col, "tmdb_id", PayloadSchemaType.KEYWORD)
+    client.create_payload_index(movies_col, "year", PayloadSchemaType.INTEGER)
+    client.create_payload_index(movies_col, "genres", PayloadSchemaType.KEYWORD)
+    client.create_payload_index(movies_col, "vote_average", PayloadSchemaType.FLOAT)
 
-    if "tmdb_reviews" not in existing:
+    if reviews_col not in existing:
         client.create_collection(
-            collection_name="tmdb_reviews",
-            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+            collection_name=reviews_col,
+            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
         )
-    client.create_payload_index("tmdb_reviews", "tmdb_id", PayloadSchemaType.KEYWORD)
+    client.create_payload_index(reviews_col, "tmdb_id", PayloadSchemaType.KEYWORD)
 
 
-def rebuild_collections(client: QdrantClient) -> None:
-    """Drop both collections so ensure_collections recreates them empty."""
+def rebuild_collections(client: QdrantClient, settings: Settings) -> None:
+    """Drop this variant's two collections so ensure_collections recreates them empty."""
     existing = {c.name for c in client.get_collections().collections}
-    for name in ("tmdb_movies", "tmdb_reviews"):
+    for name in (settings.movies_collection, settings.reviews_collection):
         if name in existing:
             client.delete_collection(name)
             _logger.info('{"step":"collection_dropped","collection":"%s"}', name)
 
 
+def drop_variant(client: QdrantClient, settings: Settings) -> None:
+    """Delete this variant's collections without recreating."""
+    rebuild_collections(client, settings)
+
+
 def load_or_compute_taste(
-    tmdb_api_key: str, *, refresh: bool, skip: bool
+    tmdb_api_key: str, *, refresh: bool, skip: bool, embedder: Embedder
 ) -> TasteProfile:
     """Ensure a taste profile exists, then return it.
 
@@ -80,7 +90,9 @@ def load_or_compute_taste(
             )
     elif refresh or not _TASTE_PROFILE_PATH.exists():
         _logger.info('{"step":"taste_compute_start"}')
-        return compute_taste_profile(tmdb_api_key, output_path=_TASTE_PROFILE_PATH)
+        return compute_taste_profile(
+            tmdb_api_key, embedder=embedder, output_path=_TASTE_PROFILE_PATH
+        )
 
     return TasteProfile.model_validate_json(_TASTE_PROFILE_PATH.read_text())
 
@@ -103,23 +115,39 @@ def run_pipeline(
     openai_api_key: str,
     qdrant_url: str,
     qdrant_api_key: str,
+    settings: Settings,
     discovery_pages: int = 5,
     rebuild: bool = False,
+    drop_variant_flag: bool = False,
     refresh_taste: bool = False,
     skip_taste: bool = False,
 ) -> None:
     os.environ["OPENAI_API_KEY"] = openai_api_key
 
+    embedder = get_embedder(settings)
+    _logger.info(
+        '{"step":"variant","embedder":"%s","dim":%d,"movies_collection":"%s"}',
+        settings.embedder,
+        settings.embedder_dim,
+        settings.movies_collection,
+    )
+
+    client = get_qdrant_client(qdrant_url, qdrant_api_key)
+
+    if drop_variant_flag:
+        drop_variant(client, settings)
+        _logger.info('{"step":"drop_variant_done"}')
+        return
+
+    if rebuild:
+        rebuild_collections(client, settings)
+    ensure_collections(client, settings)
+
     taste = load_or_compute_taste(
-        tmdb_api_key, refresh=refresh_taste, skip=skip_taste
+        tmdb_api_key, refresh=refresh_taste, skip=skip_taste, embedder=embedder
     )
     genre_ids = taste.top_genre_ids or DISCOVERY_GENRES
     _logger.info('{"step":"discovery_genres","genre_ids":%s}', json.dumps(genre_ids))
-
-    client = get_qdrant_client(qdrant_url, qdrant_api_key)
-    if rebuild:
-        rebuild_collections(client)
-    ensure_collections(client)
 
     export_dir = Path("data/letterboxd_export")
     watched_tmdb_ids = load_watched_tmdb_ids(export_dir, tmdb_api_key)
@@ -130,6 +158,8 @@ def run_pipeline(
         qdrant_url=qdrant_url,
         qdrant_api_key=qdrant_api_key,
         watched_tmdb_ids=watched_tmdb_ids,
+        embedder=embedder,
+        collection_name=settings.movies_collection,
         discovery_pages=discovery_pages,
         genre_ids=genre_ids,
     )
@@ -145,6 +175,10 @@ def run_pipeline(
         qdrant_url=qdrant_url,
         qdrant_api_key=qdrant_api_key,
         candidate_tmdb_ids=candidate_ids,
+        embedder=embedder,
+        collection_name=settings.reviews_collection,
+        chunk_max_tokens=settings.chunk_max_tokens,
+        chunk_overlap_tokens=settings.chunk_overlap_tokens,
     )
     _logger.info(
         '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
@@ -156,9 +190,32 @@ def run_pipeline(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="TMDB ingestion pipeline")
     parser.add_argument(
+        "--embedder",
+        choices=["openai-3-small", "openai-3-large", "minilm"],
+        default=None,
+        help="embedding model variant (default: openai-3-small or EMBEDDER env var)",
+    )
+    parser.add_argument(
+        "--chunk-max-tokens",
+        type=int,
+        default=None,
+        help="max tokens per review chunk (default: 300 or CHUNK_MAX_TOKENS env var)",
+    )
+    parser.add_argument(
+        "--chunk-overlap-tokens",
+        type=int,
+        default=None,
+        help="overlap tokens between review chunks (default: 50 or CHUNK_OVERLAP_TOKENS env var)",
+    )
+    parser.add_argument(
         "--rebuild",
         action="store_true",
-        help="drop and recreate Qdrant collections before loading",
+        help="drop and recreate this variant's Qdrant collections before loading",
+    )
+    parser.add_argument(
+        "--drop-variant",
+        action="store_true",
+        help="delete this variant's Qdrant collections and exit",
     )
     parser.add_argument(
         "--refresh-taste",
@@ -175,12 +232,24 @@ def _parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = _parse_args()
+    _settings = Settings()
+    # CLI overrides take precedence over env vars
+    if args.embedder is not None:
+        _settings = _settings.model_copy(update={"embedder": args.embedder})
+    if args.chunk_max_tokens is not None:
+        _settings = _settings.model_copy(update={"chunk_max_tokens": args.chunk_max_tokens})
+    if args.chunk_overlap_tokens is not None:
+        _settings = _settings.model_copy(
+            update={"chunk_overlap_tokens": args.chunk_overlap_tokens}
+        )
     run_pipeline(
         tmdb_api_key=os.environ["TMDB_API_KEY"],
         openai_api_key=os.environ["OPENAI_API_KEY"],
         qdrant_url=os.environ["QDRANT_URL"],
         qdrant_api_key=os.environ["QDRANT_API_KEY"],
+        settings=_settings,
         rebuild=args.rebuild,
+        drop_variant_flag=args.drop_variant,
         refresh_taste=args.refresh_taste,
         skip_taste=args.skip_taste,
     )

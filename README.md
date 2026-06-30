@@ -16,4 +16,16 @@ resolve):
 uv run python3 -m ingestion.pipeline
 ```
 
+This is a single entry point: it first builds the taste profile
+(`data/taste_profile.json`) from your Letterboxd export if it's missing, then
+discovers and ingests candidate movies. Discovery genres are derived from your
+taste (the genres of the films you rated/liked, weighted by rating).
+
+Flags:
+
+- `--rebuild` — drop and recreate the Qdrant collections before loading (clean
+  rebuild). Without it, reruns refresh in place (idempotent, no duplicates).
+- `--refresh-taste` — recompute the taste profile even if it already exists.
+- `--skip-taste` — reuse the existing taste profile without recomputing.
+
 Requires a populated `.env` (see `.env.example`).

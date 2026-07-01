@@ -29,14 +29,6 @@ dependencies = [
     "uvicorn[standard]>=0.49.0",
 ]
 
-[project.optional-dependencies]
-frontend = [
-    "streamlit>=1.58.0",
-    "httpx>=0.28.1",
-    "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.2",
-]
-
 [tool.pytest.ini_options]
 markers = [
     "integration: tests that require live Qdrant + OpenAI + Tavily/TMDB",
@@ -46,4 +38,12 @@ markers = [
 dev = [
     "psycopg2-binary>=2.9.12",
     "testcontainers>=4.14.2",
+]
+# Streamlit-side only — isolated so Dockerfile.frontend can `uv sync --only-group
+# frontend` for a slim image (no agent/langchain/qdrant footprint).
+frontend = [
+    "streamlit>=1.58.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
 ]

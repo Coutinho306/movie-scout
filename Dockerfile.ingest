@@ -1,0 +1,23 @@
+# One-shot ingestion image (spec: containerization-and-deploy).
+# Full deps (embedding + Qdrant load). Run via:
+#   docker compose --profile ingest run --rm ingest [args]
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+COPY ingestion/ ./ingestion/
+COPY agent/ ./agent/
+COPY retrieval/ ./retrieval/
+COPY data/ ./data/
+
+# --no-sync: env already frozen-synced at build; avoid a runtime re-sync.
+ENTRYPOINT ["uv", "run", "--no-sync", "python3", "-m", "ingestion.pipeline"]

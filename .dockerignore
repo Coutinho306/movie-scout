@@ -1,0 +1,19 @@
+# Keep the build context lean.
+.venv/
+**/__pycache__/
+**/*.pyc
+.git/
+.github/
+specs/
+__temp/
+docs/
+tests/
+data/letterboxd_export/
+*.md
+!README.md
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+eval/runs/*.csv

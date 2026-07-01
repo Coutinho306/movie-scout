@@ -1,0 +1,20 @@
+# Streamlit frontend image (spec: containerization-and-deploy).
+# Installs only the frontend-side deps via the isolated `frontend` dependency
+# group (`--only-group`) — no agent/langchain/torch footprint, so the image
+# stays slim. `--no-install-project` avoids pulling the project's own main deps.
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --only-group frontend --no-install-project
+
+COPY frontend/ ./frontend/
+
+EXPOSE 8501
+# --no-sync: the image was already synced at build time with the isolated group;
+# without it `uv run` re-syncs the full default deps and defeats the slim image.
+CMD ["uv", "run", "--no-sync", "streamlit", "run", "frontend/streamlit_app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0"]

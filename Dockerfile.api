@@ -1,0 +1,29 @@
+# FastAPI backend image (spec: containerization-and-deploy).
+FROM python:3.12-slim
+
+# System libs some wheels need at runtime (psycopg/sentence-transformers).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Dependency layer — cached unless the lock changes.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# Application code (compute_taste loader lives in ingestion/, reused by retrieval).
+COPY agent/ ./agent/
+COPY api/ ./api/
+COPY retrieval/ ./retrieval/
+COPY ingestion/ ./ingestion/
+COPY data/taste_profile.json ./data/taste_profile.json
+
+# Preload the cross-encoder rerank model so the first request isn't slow.
+RUN uv run python3 -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
+EXPOSE 8000
+# --no-sync: env already frozen-synced at build; avoid a runtime re-sync.
+CMD ["uv", "run", "--no-sync", "uvicorn", "api.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000"]

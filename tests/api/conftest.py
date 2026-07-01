@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 from agent.config import AgentSettings
 from agent.state import AgentRunResult, RecItem

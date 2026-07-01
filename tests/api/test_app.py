@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 
 def test_ask_happy_path(client: TestClient) -> None:

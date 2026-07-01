@@ -13,6 +13,10 @@ RUN uv sync --frozen --only-group frontend --no-install-project
 
 COPY frontend/ ./frontend/
 
+# Streamlit puts the script's dir (/app/frontend) on sys.path, not /app, so the
+# `frontend` package isn't importable without this.
+ENV PYTHONPATH=/app
+
 EXPOSE 8501
 # --no-sync: the image was already synced at build time with the isolated group;
 # without it `uv run` re-syncs the full default deps and defeats the slim image.

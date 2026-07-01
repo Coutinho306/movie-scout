@@ -1,0 +1,115 @@
+{
+  "title": "Movie Scout — Monitoring",
+  "tags": ["movie-scout"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-14d", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total runs (7d)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS runs FROM agent_runs WHERE ts > now() - interval '7 days';"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Thumbs-up rate (7d)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM((rating='up')::int)::float / NULLIF(count(*),0), 0) AS up_rate FROM agent_feedback WHERE ts > now() - interval '7 days';"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Runs per hour (24h)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', ts) AS time, count(*) AS runs FROM agent_runs WHERE ts > now() - interval '24 hours' GROUP BY 1 ORDER BY 1;"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Latency p50 / p95 (24h)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', ts) AS time, percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50, percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95 FROM agent_runs WHERE ts > now() - interval '24 hours' GROUP BY 1 ORDER BY 1;"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Cost USD per day (14d)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', ts) AS time, sum(cost_usd) AS cost_usd FROM agent_runs WHERE ts > now() - interval '14 days' GROUP BY 1 ORDER BY 1;"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Top 10 recommended TMDB ids",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT (c->>'tmdb_id') AS tmdb_id, count(*) AS recs FROM agent_runs, jsonb_array_elements(citations) AS c GROUP BY 1 ORDER BY recs DESC LIMIT 10;"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Last 20 thumbs-down",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "moviescout-pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT r.user_query, f.comment, f.run_id FROM agent_feedback f JOIN agent_runs r ON r.run_id = f.run_id WHERE f.rating = 'down' ORDER BY f.ts DESC LIMIT 20;"
+        }
+      ]
+    }
+  ]
+}

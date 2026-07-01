@@ -15,6 +15,7 @@ class AgentSettings(BaseSettings):
     max_orchestrator_turns: int = 4
     tavily_max_results: int = 5
     watch_region: str = "BR"
+    query_rewrite: bool = True  # rewrite the user query once before the first RAG retrieval
 
     # Reasoning models reject response_format=json_object; disable JSON mode for them.
     reasoning_models: set[str] = {"o1", "o1-mini", "o3-mini"}

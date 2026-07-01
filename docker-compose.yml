@@ -17,14 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    env_file: .env
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant_data:/qdrant/storage
-
   api:
     build:
       context: .
@@ -35,14 +27,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-movie_scout}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_URL: ${QDRANT_URL}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8501}
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
-        condition: service_started
 
   frontend:
     build:
@@ -86,13 +76,9 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TMDB_API_KEY: ${TMDB_API_KEY}
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_URL: ${QDRANT_URL}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
-    depends_on:
-      qdrant:
-        condition: service_started
 
 volumes:
   postgres_data:
   grafana_data:
-  qdrant_data:

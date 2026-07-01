@@ -10,6 +10,20 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  api:
+    # Dockerfile added in spec 0010; service is inert until then.
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-movie_scout}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      QDRANT_URL: ${QDRANT_URL}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8501}
+    depends_on:
+      - postgres
+
   grafana:
     image: grafana/grafana:latest
     ports:

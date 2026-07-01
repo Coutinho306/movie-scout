@@ -1,1 +1,105 @@
-"""Streamlit frontend for Movie Scout."""
+"""Streamlit frontend for Movie Scout — chat UI + thumbs feedback.
+
+Talks only to the FastAPI backend (via frontend.client). No agent import.
+Run: streamlit run frontend/streamlit_app.py
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from frontend import client
+from frontend.posters import poster_url
+
+st.set_page_config(page_title="Movie Scout", page_icon="🎬")
+
+
+def _render_citation(rec: dict) -> None:
+    title = rec.get("title", "?")
+    year = rec.get("year", "")
+    with st.expander(f"{title} ({year})"):
+        img = poster_url(rec["tmdb_id"]) if rec.get("tmdb_id") else None
+        if img:
+            st.image(img, width=180)
+        st.markdown(rec.get("why_for_you", ""))
+        hint = rec.get("provider_hint")
+        if hint:
+            st.caption(f"Where to watch: {hint}")
+
+
+def _send_feedback(run_id: str, rating: str) -> None:
+    try:
+        client.feedback(run_id, rating)
+    except Exception:  # noqa: BLE001 — feedback failure must not break the UI
+        st.toast("Could not send feedback", icon="⚠️")
+    st.session_state[f"fb_{run_id}"] = rating
+
+
+def _render_entry(entry: dict) -> None:
+    run_id = entry["run_id"]
+    st.markdown(f"**You:** {entry['query']}")
+    st.markdown(entry["answer"])
+
+    for rec in entry.get("citations", []):
+        _render_citation(rec)
+
+    m = entry.get("metrics", {})
+    st.caption(
+        f"latency {m.get('latency_ms', 0):.0f} ms · "
+        f"cost ${m.get('cost_usd', 0):.4f} · "
+        f"{m.get('tool_calls', 0)} tool calls"
+    )
+
+    sent = st.session_state.get(f"fb_{run_id}")
+    col_up, col_down = st.columns(2)
+    col_up.button(
+        "👍", key=f"up_{run_id}", disabled=sent is not None,
+        on_click=_send_feedback, args=(run_id, "up"),
+    )
+    col_down.button(
+        "👎", key=f"down_{run_id}", disabled=sent is not None,
+        on_click=_send_feedback, args=(run_id, "down"),
+    )
+    if sent:
+        st.caption(f"Feedback sent: {sent}")
+    st.divider()
+
+
+def main() -> None:
+    st.title("🎬 Movie Scout")
+
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    with st.form("ask_form", clear_on_submit=True):
+        query = st.text_input("Describe what you want to watch…")
+        submitted = st.form_submit_button("Ask")
+
+    if submitted and query.strip():
+        with st.spinner("Thinking…"):
+            try:
+                resp = client.ask(query)
+            except Exception as exc:  # noqa: BLE001 — surface, don't crash
+                st.error(f"Backend error: {exc}")
+                resp = None
+        if resp is not None:
+            st.session_state.history.append(
+                {
+                    "run_id": resp["run_id"],
+                    "query": query,
+                    "answer": resp["final_answer"],
+                    "citations": resp.get("citations", []),
+                    "metrics": {
+                        "latency_ms": resp.get("latency_ms", 0),
+                        "cost_usd": resp.get("cost_usd", 0),
+                        "tool_calls": resp.get("tool_calls", 0),
+                    },
+                }
+            )
+
+    # newest first
+    for entry in reversed(st.session_state.history):
+        _render_entry(entry)
+
+
+main()

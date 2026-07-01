@@ -31,9 +31,10 @@ docker compose up -d                                  # or: make up
 make eval
 ```
 
-Images: `Dockerfile.api` (backend, cross-encoder preloaded), `Dockerfile.frontend`
-(slim — Streamlit only), `Dockerfile.ingest` (one-shot). Approx sizes: frontend
-~780 MB; API/ingest carry sentence-transformers (larger, acceptable for the demo).
+Images (CPU-only torch — no CUDA): `Dockerfile.api` ~3.1 GB (backend + rerank
+model preloaded), `Dockerfile.frontend` ~780 MB (slim — Streamlit only, no
+agent/torch), `Dockerfile.ingest` ~2.75 GB (one-shot embedding job). The API/ingest
+bulk is CPU PyTorch + transformers for the cross-encoder reranker.
 
 `QDRANT_URL` selects the backend: leave it empty for the compose `qdrant` service,
 or point it at Qdrant Cloud for deploy (see [`docs/deploy.md`](docs/deploy.md)).

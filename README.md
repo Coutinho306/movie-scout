@@ -124,3 +124,47 @@ uv run python3 -m eval.cli all
 `best_retrieval.json` contains the config id and full parameter set of the
 config with the highest `mean_ndcg_at_k`. Pass those parameters to the agent
 or set them as defaults in `retrieval/config.py` before shipping.
+
+## Monitoring
+
+Every `/ask` run and every 👍/👎 is written to Postgres (`agent_runs`,
+`agent_feedback`) and visualised in a provisioned Grafana dashboard.
+
+```bash
+docker compose up -d postgres grafana
+```
+
+Open http://localhost:3000 — the **Movie Scout — Monitoring** dashboard loads
+automatically (anonymous viewer access is on; admin login is `admin` /
+`GF_SECURITY_ADMIN_PASSWORD`, default `admin`). Schema is created on the
+Postgres container's first boot from `infra/postgres/init/`.
+
+To populate the dashboard without running the agent dozens of times, apply the
+opt-in demo seed:
+
+```bash
+docker compose exec -T postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < infra/postgres/seed_demo.sql
+```
+
+Panels:
+
+1. **Total runs (7d)** — volume single-stat.
+2. **Thumbs-up rate (7d)** — `up / (up+down)`.
+3. **Runs per hour (24h)** — throughput time series.
+4. **Latency p50 / p95 (24h)** — response-time percentiles.
+5. **Cost USD per day (14d)** — spend trend.
+6. **Top 10 recommended TMDB ids** — from `citations` JSONB.
+7. **Last 20 thumbs-down** — query + comment for triage.
+
+Dashboard JSON and datasource live in `infra/grafana/` and are provisioned on
+container start — no manual import.
+
+![Grafana dashboard](docs/screenshots/grafana.png)
+
+### Traces
+
+LLM traces go to [LangSmith](https://smith.langchain.com) — set
+`LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in `.env` (already wired by
+the agent, spec 0005). Open the `movie_scout` project to inspect a run's node
+graph, token usage, and latency per step.

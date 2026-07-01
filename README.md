@@ -6,9 +6,41 @@
 **Stack:** LangGraph · Qdrant · OpenAI · FastAPI · Streamlit  
 **Capstone project for [LLM Zoomcamp](https://github.com/DataTalksClub/llm-zoomcamp) (2026 cohort)**
 
-## Run the app
+## Quickstart (Docker)
 
-Two processes: the FastAPI backend and the Streamlit UI. Both read `.env`.
+The whole stack — API, UI, Qdrant, Postgres, Grafana — runs from one compose file.
+
+```bash
+# 1. configure
+cp .env.example .env        # fill in TMDB_API_KEY, OPENAI_API_KEY, TAVILY_API_KEY
+                            # (LANGCHAIN_API_KEY optional, for traces)
+
+# 2. drop your Letterboxd export under data/letterboxd_export/
+
+# 3. ingest once (~10 min: builds taste profile, loads Qdrant)
+docker compose --profile ingest run --rm ingest      # or: make ingest
+
+# 4. bring up the runtime stack
+docker compose up -d                                  # or: make up
+
+# 5. open the app
+#    chat UI     → http://localhost:8501
+#    Grafana     → http://localhost:3000  (anonymous viewer)
+
+# 6. (optional) run the eval grids
+make eval
+```
+
+Images: `Dockerfile.api` (backend, cross-encoder preloaded), `Dockerfile.frontend`
+(slim — Streamlit only), `Dockerfile.ingest` (one-shot). Approx sizes: frontend
+~780 MB; API/ingest carry sentence-transformers (larger, acceptable for the demo).
+
+`QDRANT_URL` selects the backend: leave it empty for the compose `qdrant` service,
+or point it at Qdrant Cloud for deploy (see [`docs/deploy.md`](docs/deploy.md)).
+
+## Run the app (without Docker)
+
+Two processes on the host. Both read `.env`.
 
 ```bash
 # 1. backend (agent over HTTP)
@@ -166,5 +198,13 @@ container start — no manual import.
 
 LLM traces go to [LangSmith](https://smith.langchain.com) — set
 `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in `.env` (already wired by
-the agent, spec 0005). Open the `movie_scout` project to inspect a run's node
-graph, token usage, and latency per step.
+the agent). Open the `movie_scout` project to inspect a run's node graph, token
+usage, and latency per step.
+
+## Deploy
+
+The API and UI deploy to [Railway](https://railway.app) (managed Postgres +
+Qdrant Cloud). Full steps, env-var table, and the `railway.json` build config are
+in [`docs/deploy.md`](docs/deploy.md).
+
+<!-- Live demo URL + screenshot added after first deploy. -->

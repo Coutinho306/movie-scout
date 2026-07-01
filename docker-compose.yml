@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:15
+    env_file: .env
     ports:
       - "5432:5432"
     environment:
@@ -16,25 +17,37 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   api:
-    # Dockerfile added in spec 0010; service is inert until then.
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
     ports:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-movie_scout}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      QDRANT_URL: ${QDRANT_URL}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8501}
     depends_on:
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
 
   frontend:
-    # Shares the app image (Dockerfile added in spec 0010); inert until then.
-    build: .
-    command: streamlit run frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    env_file: .env
     ports:
       - "8501:8501"
     environment:
@@ -45,6 +58,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    env_file: .env
     ports:
       - "3000:3000"
     environment:
@@ -62,6 +76,22 @@ services:
       postgres:
         condition: service_healthy
 
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    env_file: .env
+    profiles: ["ingest"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+    depends_on:
+      qdrant:
+        condition: service_started
+
 volumes:
   postgres_data:
   grafana_data:
+  qdrant_data:

@@ -87,7 +87,16 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
 
         if pool is not None:
             asyncio.create_task(
-                store.insert_run(pool, run_id, req.query, req.session_id, result)
+                store.insert_run(
+                    pool,
+                    run_id,
+                    req.query,
+                    result,
+                    model=agent_settings.model_agent,
+                    prompt_variant=(
+                        "rewrite" if agent_settings.query_rewrite else "baseline"
+                    ),
+                )
             )
 
         return AskResponse(

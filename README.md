@@ -6,6 +6,27 @@
 **Stack:** LangGraph · Qdrant · OpenAI · FastAPI · Streamlit  
 **Capstone project for [LLM Zoomcamp](https://github.com/DataTalksClub/llm-zoomcamp) (2026 cohort)**
 
+## Run the app
+
+Two processes: the FastAPI backend and the Streamlit UI. Both read `.env`.
+
+```bash
+# 1. backend (agent over HTTP)
+uv run uvicorn api.fastapi_app:app --reload
+
+# 2. UI (in a second terminal)
+uv run streamlit run frontend/streamlit_app.py
+```
+
+The UI opens on http://localhost:8501 and calls the backend at `API_BASE_URL`
+(default `http://localhost:8000`). Ask for something to watch, expand the
+citation cards, and rate the answer with 👍 / 👎.
+
+![Chat UI](docs/screenshots/chat.png)
+![Feedback](docs/screenshots/feedback.png)
+
+See [`frontend/README.md`](frontend/README.md) for env vars and details.
+
 ## Ingestion
 
 Run the TMDB ingestion pipeline as a module from the project root (the package

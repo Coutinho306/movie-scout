@@ -24,6 +24,18 @@ services:
     depends_on:
       - postgres
 
+  frontend:
+    # Shares the app image (Dockerfile added in spec 0010); inert until then.
+    build: .
+    command: streamlit run frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000
+      TMDB_API_KEY: ${TMDB_API_KEY}
+    depends_on:
+      - api
+
   grafana:
     image: grafana/grafana:latest
     ports:

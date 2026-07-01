@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.api"
+  },
+  "deploy": {
+    "startCommand": "uv run --no-sync uvicorn api.fastapi_app:app --host 0.0.0.0 --port $PORT",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}

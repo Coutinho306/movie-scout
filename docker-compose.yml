@@ -19,6 +19,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    env_file: .env
     ports:
       - "6333:6333"
     volumes:

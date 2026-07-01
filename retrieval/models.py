@@ -15,6 +15,7 @@ class MovieHit(BaseModel):
     score: float  # vector similarity score
     taste_score: float = 0.0
     blended_score: float = 0.0
+    vector: list[float] | None = None  # dense embedding, populated when with_vectors=True
 
 
 class ReviewHit(BaseModel):

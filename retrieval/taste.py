@@ -32,29 +32,25 @@ def score_against_taste(
     profile: TasteProfile | None = None,
     alpha: float = 0.5,
 ) -> list[MovieHit]:
-    """Blend retrieval score with taste-centroid cosine similarity.
+    """No-vector fallback: rank by retrieval score, taste ignored.
 
-    blended = alpha * retrieval_score + (1 - alpha) * taste_score
+    Use this only when per-hit embedding vectors are unavailable. With no
+    vectors there is nothing to compare against the centroid, so taste_score is
+    0 and blended collapses to ``alpha * retrieval_score`` — the ordering is the
+    retrieval ordering, scaled. When vectors *are* available, callers must use
+    :func:`score_against_taste_with_vectors` instead for real taste ranking.
 
-    Loads taste_profile.json when profile=None.
-    Returns hits sorted descending by blended_score.
+    Loads taste_profile.json when profile=None. Returns hits sorted descending
+    by blended_score.
     """
     if not hits:
         return hits
     if profile is None:
         profile = load_taste_profile(_TASTE_PROFILE_PATH)
 
-    centroid = profile.centroid
     updated: list[MovieHit] = []
     for hit in hits:
-        # Each MovieHit may carry a pre-embedded vector in payload, but
-        # we only store metadata in Qdrant payload (not the vector itself).
-        # We use the retrieval score as a proxy and centroid to compute a
-        # coarse estimate: since we embedded the query and retrieved by
-        # cosine, the score already encodes semantic alignment.
-        # Taste score comes from re-encoding the movie text if available;
-        # for now use the stored score (range 0–1) as retrieval_score.
-        taste_score = 0.0  # placeholder; real cosine needs stored vector
+        taste_score = 0.0  # no vector to compare against the centroid
         blended = alpha * hit.score + (1.0 - alpha) * taste_score
         updated.append(
             hit.model_copy(update={"taste_score": taste_score, "blended_score": blended})

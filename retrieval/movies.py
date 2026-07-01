@@ -66,6 +66,18 @@ def _build_filter(filters: MovieFilters | None) -> Filter | None:
     return Filter(must=conditions) if conditions else None
 
 
+def _extract_vector(point: ScoredPoint) -> list[float] | None:
+    """Pull the default dense vector off a point.
+
+    Qdrant returns the vector as a bare list for a single unnamed vector, or as a
+    ``{name: vector}`` dict when named/hybrid vectors are configured.
+    """
+    vec = point.vector
+    if isinstance(vec, dict):
+        vec = vec.get("") or next(iter(vec.values()), None)
+    return vec  # type: ignore[return-value]
+
+
 def _point_to_hit(point: ScoredPoint) -> MovieHit:
     p = point.payload or {}
     return MovieHit(
@@ -76,6 +88,7 @@ def _point_to_hit(point: ScoredPoint) -> MovieHit:
         genres=p.get("genres", []),
         vote_average=p.get("vote_average", 0.0),
         score=point.score,
+        vector=_extract_vector(point),
     )
 
 
@@ -120,6 +133,7 @@ def search_movies(
                 query_filter=qdrant_filter,
                 score_threshold=settings.score_threshold,
                 with_payload=True,
+                with_vectors=True,
             ).points
         except Exception as exc:
             _logger.warning(
@@ -134,6 +148,7 @@ def search_movies(
                 query_filter=qdrant_filter,
                 score_threshold=settings.score_threshold,
                 with_payload=True,
+                with_vectors=True,
             ).points
     else:
         results = client.query_points(
@@ -143,6 +158,7 @@ def search_movies(
             query_filter=qdrant_filter,
             score_threshold=settings.score_threshold,
             with_payload=True,
+            with_vectors=True,
         ).points
 
     hits = [_point_to_hit(p) for p in results]

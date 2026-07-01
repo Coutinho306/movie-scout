@@ -33,3 +33,8 @@ dependencies = [
 markers = [
     "integration: tests that require live Qdrant + OpenAI + Tavily/TMDB",
 ]
+
+[dependency-groups]
+dev = [
+    "testcontainers>=4.14.2",
+]

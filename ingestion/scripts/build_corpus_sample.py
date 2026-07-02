@@ -130,6 +130,13 @@ def build_corpus(*, force: bool = False) -> list[int]:
     # Ordered dict preserves insertion order and deduplicates.
     seen: dict[int, None] = {}
 
+    def _merge(ids: list[int]) -> int:
+        """Add ids to seen; return how many were new (first-seen tier attribution)."""
+        before = len(seen)
+        for i in ids:
+            seen.setdefault(i, None)
+        return len(seen) - before
+
     # --- Tier 1: blockbusters (vote_count ≥ 5000) ---
     blockbuster_ids = _discover_tier(
         api_key,
@@ -139,8 +146,7 @@ def build_corpus(*, force: bool = False) -> list[int]:
         },
         tier_name="blockbuster",
     )
-    for i in blockbuster_ids:
-        seen.setdefault(i, None)
+    blockbuster_new = _merge(blockbuster_ids)
 
     # --- Tier 2: popular (vote_count 1000–4999) ---
     popular_ids = _discover_tier(
@@ -152,21 +158,19 @@ def build_corpus(*, force: bool = False) -> list[int]:
         },
         tier_name="popular",
     )
-    for i in popular_ids:
-        seen.setdefault(i, None)
+    popular_new = _merge(popular_ids)
 
     # --- Tier 3: ok (vote_count 200–999) ---
-    ok_ids = _discover_tier(
+    mid_ids = _discover_tier(
         api_key,
         params={
             "sort_by": "vote_count.desc",
             "vote_count.gte": 200,
             "vote_count.lte": 999,
         },
-        tier_name="ok",
+        tier_name="mid",
     )
-    for i in ok_ids:
-        seen.setdefault(i, None)
+    mid_new = _merge(mid_ids)
 
     # --- Tier 4: niche-genre fill (Documentary/Western/War/Music/History/TV Movie)
     #             vote_count 50–199 AND vote_average ≥ 6.5, capped ~600 total ---
@@ -183,15 +187,15 @@ def build_corpus(*, force: bool = False) -> list[int]:
                 "vote_average.gte": 6.5,
             },
             cap=niche_cap_per_genre,
-            tier_name=f"niche_genre_{genre_id}",
+            tier_name=f"niche_fill_{genre_id}",
         )
         niche_total.extend(genre_ids_tier)
-    for i in niche_total:
-        seen.setdefault(i, None)
+    niche_new = _merge(niche_total)
 
     # --- Tier 5: pt/es original-language, vote_count ≥ 20, vote_average ≥ 6.5,
     #             capped ~300 (150 per language) ---
     lang_cap = 150
+    lang_new = 0
     for lang in ("pt", "es"):
         lang_ids = _discover_tier(
             api_key,
@@ -204,8 +208,7 @@ def build_corpus(*, force: bool = False) -> list[int]:
             cap=lang_cap,
             tier_name=f"lang_{lang}",
         )
-        for i in lang_ids:
-            seen.setdefault(i, None)
+        lang_new += _merge(lang_ids)
 
     # --- Tier 6: recent releases (last 90 days), popularity.desc, capped ~200 ---
     date_gte = (date.today() - timedelta(days=90)).isoformat()
@@ -218,29 +221,21 @@ def build_corpus(*, force: bool = False) -> list[int]:
         cap=200,
         tier_name="recent",
     )
-    for i in recent_ids:
-        seen.setdefault(i, None)
+    recent_new = _merge(recent_ids)
 
     all_ids: list[int] = list(seen.keys())
 
-    # --- Audit counts per tier (post-dedup totals by tier order) ---
+    # --- Audit counts: new unique ids each tier contributed (first-seen wins),
+    #     so the tier counts always sum to total_deduped. ---
     tier_counts = {
-        "blockbuster": len(blockbuster_ids),
-        "popular": len(popular_ids),
-        "ok": len(ok_ids),
-        "niche_genre": len(niche_total),
-        "lang_pt_es": sum(
-            1 for _ in range(lang_cap * 2)  # placeholder; actual counted below
-        ),
-        "recent": len(recent_ids),
+        "blockbuster": blockbuster_new,  # vote_count ≥ 5000
+        "popular": popular_new,  # 1000–4999
+        "mid": mid_new,  # 200–999
+        "niche_fill": niche_new,  # thin-genre rescue, 50–199 & rating ≥ 6.5
+        "regional_pt_es": lang_new,  # anglophone vote-bias correction
+        "recent_90d": recent_new,  # vote-lag correction for new releases
         "total_deduped": len(all_ids),
     }
-    # Recount lang accurately.
-    lang_count = sum(
-        1 for i in all_ids
-        if i not in set(blockbuster_ids + popular_ids + ok_ids + niche_total + recent_ids)
-    )
-    tier_counts["lang_pt_es"] = lang_count
 
     CORPUS_CACHE.parent.mkdir(parents=True, exist_ok=True)
     CORPUS_CACHE.write_text(

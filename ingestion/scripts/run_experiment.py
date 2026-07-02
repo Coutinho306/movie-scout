@@ -133,7 +133,8 @@ def main() -> None:
         # Golden sample also lives in the calib_ namespace.
         settings = settings.model_copy(update={"sample": True})
 
-    if settings._is_default_variant():
+    # In corpus mode targeting the plain collections is the point — don't warn.
+    if settings._is_default_variant() and not corpus_mode:
         _logger.warning(
             '{"step":"warn","msg":"all params are defaults — targeting plain collections; '
             'use --embedder or --chunk-* to target a variant"}'

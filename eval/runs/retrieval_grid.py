@@ -14,6 +14,7 @@ import yaml
 
 from eval.golden import GoldenSet, build_golden_set
 from eval.metrics.retrieval import mrr, ndcg_at_k, precision_at_k, recall_at_k
+from ingestion.config import Settings as IngestionSettings
 from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
 
@@ -33,7 +34,6 @@ def _load_grid(grid_yaml: Path) -> list[dict]:
 
 def _run_config(cfg: dict, golden: GoldenSet) -> dict:
     variant = cfg.get("variant", "default")
-    _collection_override = None if variant == "default" else f"tmdb_movies__{variant}"
 
     settings = RetrievalSettings(
         top_k=cfg["top_k"],
@@ -41,6 +41,11 @@ def _run_config(cfg: dict, golden: GoldenSet) -> dict:
         rerank=cfg["rerank"],
         query_rewrite=cfg["query_rewrite"],
     )
+    # Pin the query embedder + collection to the variant's ingestion config so the
+    # query embeds in the SAME vector space as the stored points. Without this a
+    # minilm (384d) collection would be queried with a 3-small (1536d) vector.
+    ingestion = IngestionSettings.from_variant_suffix(variant)
+    settings = settings.with_ingestion(ingestion)
 
     latencies: list[float] = []
     p_vals, r_vals, mrr_vals, ndcg_vals = [], [], [], []
@@ -125,3 +130,22 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
 
     logger.info("Wrote %s", out_path)
     return out_path
+
+
+def _parse_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run retrieval/calibration grid")
+    parser.add_argument(
+        "--grid",
+        type=Path,
+        default=DEFAULT_GRID,
+        help="grid yaml (e.g. eval/grids/calibration.yaml)",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    args = _parse_args()
+    run(args.grid)

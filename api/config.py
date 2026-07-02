@@ -11,6 +11,7 @@ class ApiSettings(BaseSettings):
     database_url: str | None = None  # postgresql://…; None disables persistence
     allowed_origins: str = "http://localhost:8501"  # comma-separated
     port: int = 8000
+    rate_limit: str = "10/minute"  # slowapi limit string applied to /ask
 
     def origins_list(self) -> list[str]:
         """Split ALLOWED_ORIGINS into a clean list for the CORS middleware."""

@@ -6,6 +6,12 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from agent.config import AgentSettings
+from api.config import ApiSettings
+from api.dependencies import get_agent_run_fn, get_agent_settings, get_pg_pool
+import api.fastapi_app as fastapi_app
+from api.fastapi_app import create_app
+
 
 def test_ask_happy_path(client: TestClient) -> None:
     resp = client.post("/ask", json={"query": "slow meditative film"})
@@ -48,3 +54,26 @@ def test_healthz_200(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert "qdrant" in body
     assert "openai" in body
+
+
+def test_ask_rate_limited(monkeypatch) -> None:
+    """/ask returns 429 once the per-client limit is exceeded."""
+    from slowapi import Limiter
+
+    from tests.api.conftest import _stub_agent_run
+
+    # Swap in a fresh Limiter with its own storage so /ask limits registered by
+    # other tests' apps on the shared module limiter can't leak into this one.
+    monkeypatch.setattr(
+        fastapi_app, "limiter", Limiter(key_func=fastapi_app._client_key)
+    )
+    app = create_app(ApiSettings(rate_limit="3/minute"))
+    app.dependency_overrides[get_agent_run_fn] = lambda: _stub_agent_run
+    app.dependency_overrides[get_agent_settings] = lambda: AgentSettings()
+    app.dependency_overrides[get_pg_pool] = lambda: None
+    with TestClient(app) as c:
+        for _ in range(3):
+            r = c.post("/ask", json={"query": "film"})
+            assert r.status_code == 200
+        assert c.post("/ask", json={"query": "film"}).status_code == 429
+    app.dependency_overrides.clear()

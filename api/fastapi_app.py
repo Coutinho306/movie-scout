@@ -16,9 +16,12 @@ from contextlib import asynccontextmanager
 from typing import Callable
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from agent.config import AgentSettings
 from agent.state import AgentRunResult
@@ -33,6 +36,18 @@ from api.dependencies import (
 from api.models import AskRequest, AskResponse, FeedbackRequest
 
 logger = logging.getLogger(__name__)
+
+
+def _client_key(request: Request) -> str:
+    """Rate-limit key. Behind a proxy (Railway) the real client IP is the first
+    hop of X-Forwarded-For; fall back to the socket peer for direct/local runs."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_key)
 
 
 @asynccontextmanager
@@ -53,6 +68,8 @@ async def lifespan(app: FastAPI):
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
     settings = settings or get_api_settings()
     app = FastAPI(title="Movie Scout API", lifespan=lifespan)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.origins_list(),
@@ -62,7 +79,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     )
 
     @app.post("/ask", response_model=AskResponse)
+    @limiter.limit(settings.rate_limit)
     async def ask(
+        request: Request,
         req: AskRequest,
         agent_run: Callable[..., AgentRunResult] = Depends(get_agent_run_fn),
         agent_settings: AgentSettings = Depends(get_agent_settings),

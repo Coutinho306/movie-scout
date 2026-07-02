@@ -22,6 +22,9 @@ htmlcov/
 # Virtual environments
 .venv
 
+# node
+node_modules/
+
 # env
 .env
 
@@ -32,6 +35,8 @@ __temp/
 data/letterboxd_export/*
 data/taste_profile.json
 data/taste_profile.npy
+data/calibration_sample.json
+data/corpus_sample.json
 
 # eval runs — ignore CSV/JSON artifacts, keep source
 eval/runs/*

@@ -61,6 +61,15 @@ def _parse_args() -> argparse.Namespace:
         help="comma-separated tmdb ids to ingest (overrides discovery); e.g. 550,680",
     )
     parser.add_argument(
+        "--corpus",
+        action="store_true",
+        help=(
+            "ingest an explicit id list into the production (default, unsuffixed) "
+            "collections; reads data/corpus_sample.json unless --tmdb-ids is given; "
+            "sets sample=False — no calib_ namespace"
+        ),
+    )
+    parser.add_argument(
         "--rebuild",
         action="store_true",
         help="drop and recreate this variant's Qdrant collections before loading",
@@ -100,15 +109,28 @@ def main() -> None:
         settings = settings.model_copy(update=overrides)
 
     explicit_tmdb_ids: list[int] | None = None
-    if args.tmdb_ids:
+    corpus_mode: bool = getattr(args, "corpus", False)
+
+    if corpus_mode:
+        # Corpus mode: ingest an explicit id list into the production (default)
+        # collections.  sample stays False — no calib_ namespace.
+        if args.tmdb_ids:
+            explicit_tmdb_ids = [int(x) for x in args.tmdb_ids.split(",") if x.strip()]
+        else:
+            from ingestion.scripts.build_corpus_sample import load_corpus
+
+            explicit_tmdb_ids = load_corpus()
+        # sample must be False so the pipeline targets unsuffixed collections.
+        settings = settings.model_copy(update={"sample": False})
+    elif args.tmdb_ids:
         explicit_tmdb_ids = [int(x) for x in args.tmdb_ids.split(",") if x.strip()]
+        # Any non-corpus explicit id list lives in the disposable calib_ namespace.
+        settings = settings.model_copy(update={"sample": True})
     elif args.golden_sample:
         from ingestion.scripts.build_calibration_sample import build_sample
 
         explicit_tmdb_ids = build_sample(distractors=300)
-
-    if explicit_tmdb_ids is not None:
-        # Any sample ingest lives in the disposable calib_ namespace, never prod.
+        # Golden sample also lives in the calib_ namespace.
         settings = settings.model_copy(update={"sample": True})
 
     if settings._is_default_variant():

@@ -6,6 +6,19 @@ dist/
 wheels/
 *.egg-info
 
+# test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor cruft
+.DS_Store
+
+# streamlit secrets
+.streamlit/secrets.toml
+
 # Virtual environments
 .venv
 
@@ -28,3 +41,6 @@ eval/runs/*
 
 # planning (local only)
 specs/
+
+# claude
+.claude

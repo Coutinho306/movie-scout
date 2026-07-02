@@ -93,9 +93,3 @@ uv run python3 -m ingestion.scripts.run_experiment --embedder openai-3-large \
 # run the grid
 uv run python3 -m eval.runs.retrieval_grid --grid eval/grids/calibration.yaml
 ```
-
-## Cleanup state
-
-Kept: `calib_3small_c300o50_keywords` (winner/baseline), `calib_3large_c300o50_keywords`
-(runner-up, for future re-checks). Dropped: minilm, bge-small, 3small base, chunk-sweep
-collections (`run_experiment ... --drop-variant`).

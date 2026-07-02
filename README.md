@@ -100,13 +100,13 @@ Each variant writes to its own auto-named Qdrant collection so variants coexist:
 
 | Variant | Movies collection | Reviews collection |
 |---|---|---|
-| `openai-3-large` | `tmdb_movies__3large` | `tmdb_reviews__3large` |
+| `openai-3-large` | `tmdb_movies__3large_c300o50` | `tmdb_reviews__3large_c300o50` |
 | `minilm` (default chunks) | `tmdb_movies__minilm_c300o50` | `tmdb_reviews__minilm_c300o50` |
 | `minilm --chunk-max-tokens 200` | `tmdb_movies__minilm_c200o50` | `tmdb_reviews__minilm_c200o50` |
 
 Additional flags:
 
-- `--embedder {openai-3-small,openai-3-large,minilm}` — embedding model.
+- `--embedder {openai-3-small,openai-3-large,minilm,bge-small}` — embedding model.
 - `--chunk-max-tokens N` — max tokens per review chunk (default 300).
 - `--chunk-overlap-tokens N` — token overlap between chunks (default 50).
 - `--rebuild` — drop and recreate this variant's collections before loading.
@@ -116,6 +116,11 @@ Additional flags:
 
 Offline evaluation grid-searches retrieval and LLM knobs against a ground-truth
 set built from the held-out watchlist (`data/letterboxd_export/watchlist.csv`).
+
+Embedder / chunk / embed_text calibration (method, results, and the decision to
+ship 3-small + keywords) is documented in
+[`eval/runs/calibration_report.md`](eval/runs/calibration_report.md); the
+decision is also logged in [`DECISIONS.md`](DECISIONS.md).
 
 ### Step 1 — run retrieval grid
 

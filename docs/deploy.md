@@ -3,8 +3,8 @@
 Movie Scout deploys to [Railway](https://railway.app): the FastAPI backend and the
 Streamlit frontend each run as a Railway service built from their Dockerfiles,
 Postgres is Railway-managed, and Qdrant runs on [Qdrant Cloud](https://cloud.qdrant.io)
-(Railway hosts Qdrant poorly). One env var, `QDRANT_URL`, selects local-container
-vs cloud.
+(Railway hosts Qdrant poorly). Qdrant Cloud is used for local runs too — `QDRANT_URL`
+/ `QDRANT_API_KEY` in `.env` point at the cluster in both cases.
 
 `railway.json` at the repo root configures the **api** service (Dockerfile build +
 start command). The **frontend** service is added separately (below) pointing at

@@ -8,7 +8,9 @@
 
 ## Quickstart (Docker)
 
-The whole stack — API, UI, Qdrant, Postgres, Grafana — runs from one compose file.
+The runtime stack — API, UI, Postgres, Grafana — runs from one compose file.
+Qdrant is a managed [Qdrant Cloud](https://cloud.qdrant.io) cluster (set via
+`QDRANT_URL` / `QDRANT_API_KEY` in `.env`), not a local container.
 
 ```bash
 # 1. configure
@@ -36,8 +38,8 @@ model preloaded), `Dockerfile.frontend` ~780 MB (slim — Streamlit only, no
 agent/torch), `Dockerfile.ingest` ~2.75 GB (one-shot embedding job). The API/ingest
 bulk is CPU PyTorch + transformers for the cross-encoder reranker.
 
-`QDRANT_URL` selects the backend: leave it empty for the compose `qdrant` service,
-or point it at Qdrant Cloud for deploy (see [`docs/deploy.md`](docs/deploy.md)).
+`QDRANT_URL` / `QDRANT_API_KEY` point at your Qdrant Cloud cluster and are
+required (local and deploy alike — see [`docs/deploy.md`](docs/deploy.md)).
 
 ## Run the app (without Docker)
 

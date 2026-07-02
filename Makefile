@@ -1,6 +1,6 @@
 .PHONY: up down ingest eval logs build
 
-# Bring up the runtime stack (postgres, qdrant, grafana, api, frontend).
+# Bring up the runtime stack (postgres, grafana, api, frontend; Qdrant is cloud).
 up:
 	docker compose up -d
 

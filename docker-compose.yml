@@ -30,6 +30,7 @@ services:
       QDRANT_URL: ${QDRANT_URL}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8501}
+      RATE_LIMIT: ${RATE_LIMIT:-10/minute}
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MovieHit(BaseModel):
@@ -15,7 +15,10 @@ class MovieHit(BaseModel):
     score: float  # vector similarity score
     taste_score: float = 0.0
     blended_score: float = 0.0
-    vector: list[float] | None = None  # dense embedding, populated when with_vectors=True
+    # Dense embedding, populated when with_vectors=True. exclude=True keeps it
+    # out of every model_dump()/json() — it's for internal scoring math only,
+    # and ~1536 floats serialized into an LLM tool result blows the context.
+    vector: list[float] | None = Field(default=None, exclude=True)
 
 
 class ReviewHit(BaseModel):

@@ -28,9 +28,8 @@ def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> lis
     def search_movies(query: str, k: int = top_k) -> list[dict]:
         """Search the TMDB movie collection by semantic similarity. Returns movie dicts with tmdb_id, title, year, overview, genres."""
         hits = search_movies_tool(query, k=k)
-        # Exclude the raw embedding vector — ~1536 floats stringify to ~20k
-        # chars per hit and would blow past the model's context window.
-        dicts = [h.model_dump(exclude={"vector"}) for h in hits]
+        # vector is excluded at the model level (MovieHit.vector Field(exclude=True))
+        dicts = [h.model_dump() for h in hits]
         seen = {d["tmdb_id"] for d in collected}
         for d in dicts:
             if d["tmdb_id"] not in seen:

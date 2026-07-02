@@ -17,7 +17,7 @@ _TOKEN_TO_EMBEDDER = {v: k for k, v in _EMBEDDER_TO_TOKEN.items()}
 
 _DEFAULT_CHUNK_MAX = 300
 _DEFAULT_CHUNK_OVERLAP = 50
-_DEFAULT_RECIPE = "base"
+_DEFAULT_RECIPE = "keywords"
 
 
 class Settings(BaseSettings):

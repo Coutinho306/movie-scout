@@ -146,6 +146,9 @@ def _parse_args():
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    load_dotenv()  # QDRANT_URL/OPENAI_API_KEY for search + embedding
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _parse_args()
     run(args.grid)

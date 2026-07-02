@@ -4,6 +4,7 @@ Log of architecture tradeoffs and choices made during development.
 
 | Date | Decision | Rationale | Alternatives considered |
 |------|----------|-----------|------------------------|
+| 2026-07-02 | Keep text-embedding-3-small + keywords recipe + chunks 300/50 after calibration round 2 (see eval/runs/calibration_report.md) | 3-large gains only +0.04 nDCG for 6.5× embed cost and +55% query latency; keywords recipe is the real lever (+0.12 nDCG); chunk size provably irrelevant to movie retrieval (movies unchunked) | 3-large (marginal gain, kept as runner-up collection), bge-small-en-v1.5 / MiniLM (local, nDCG 0.37/0.29 vs 0.59 — not competitive), chunk 150/30 and 600/100 (bit-identical metrics) |
 | 2026-06-12 | Use Letterboxd CSV export as source-of-truth | API denied for AI/recommendation use cases; manual export is the only legitimate path | Letterboxd API (denied), HTML scraping (TOS prohibits) |
 | 2026-06-12 | TMDB API as primary metadata source | Official API, free, structured JSON, covers metadata + reviews + providers | OMDb (no reviews), IMDb (TOS prohibits scraping) |
 | 2026-06-12 | Tavily as web search fallback only | RAG indexed first; web search adds 2-5s latency and eval unpredictability | Primary web search (rejected — latency, cost, eval issues) |

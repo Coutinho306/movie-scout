@@ -38,6 +38,10 @@ eval/runs/*
 !eval/runs/__init__.py
 !eval/runs/retrieval_grid.py
 !eval/runs/llm_grid.py
+# calibration evidence — calib_ collections dropped, CSVs not regenerable
+!eval/runs/calibration_report.md
+!eval/runs/retrieval_20260702T051634.csv
+!eval/runs/retrieval_20260702T163858.csv
 
 # planning (local only)
 specs/

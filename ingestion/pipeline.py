@@ -120,6 +120,7 @@ def run_pipeline(
     rebuild: bool = False,
     refresh_taste: bool = False,
     skip_taste: bool = False,
+    explicit_tmdb_ids: list[int] | None = None,
 ) -> None:
     os.environ["OPENAI_API_KEY"] = openai_api_key
 
@@ -136,6 +137,43 @@ def run_pipeline(
     if rebuild:
         rebuild_collections(client, settings)
     ensure_collections(client, settings)
+
+    if explicit_tmdb_ids is not None:
+        # Calibration sample path: a fixed id list, no taste/discovery. The same
+        # ids feed movies and reviews so every variant indexes an identical corpus.
+        _logger.info(
+            '{"step":"sample_mode","ids":%d,"recipe":"%s"}',
+            len(explicit_tmdb_ids),
+            settings.embed_text_recipe,
+        )
+        movies_loaded = load_tmdb_movies(
+            api_key=tmdb_api_key,
+            qdrant_url=qdrant_url,
+            qdrant_api_key=qdrant_api_key,
+            watched_tmdb_ids=set(),
+            embedder=embedder,
+            collection_name=settings.movies_collection,
+            explicit_tmdb_ids=explicit_tmdb_ids,
+            embed_text_recipe=settings.embed_text_recipe,
+        )
+        candidate_ids = list(explicit_tmdb_ids)
+        _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
+        reviews_loaded = load_tmdb_reviews(
+            api_key=tmdb_api_key,
+            qdrant_url=qdrant_url,
+            qdrant_api_key=qdrant_api_key,
+            candidate_tmdb_ids=candidate_ids,
+            embedder=embedder,
+            collection_name=settings.reviews_collection,
+            chunk_max_tokens=settings.chunk_max_tokens,
+            chunk_overlap_tokens=settings.chunk_overlap_tokens,
+        )
+        _logger.info(
+            '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
+            movies_loaded,
+            reviews_loaded,
+        )
+        return
 
     taste = load_or_compute_taste(
         tmdb_api_key, refresh=refresh_taste, skip=skip_taste, embedder=embedder
@@ -156,6 +194,7 @@ def run_pipeline(
         collection_name=settings.movies_collection,
         discovery_pages=discovery_pages,
         genre_ids=genre_ids,
+        embed_text_recipe=settings.embed_text_recipe,
     )
 
     candidate_ids = discover_candidate_tmdb_ids(

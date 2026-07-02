@@ -1,0 +1,14 @@
+# Calibration grid — embedding / chunk / embed_text recipe ONLY (small sample).
+# Retrieval knobs (hybrid/rerank/query_rewrite) are NOT swept here; they're
+# calibrated post-B on the full corpus (they don't re-embed). See the spike.
+#
+# Each variant maps to a disposable calib_ collection ingested separately via
+# `run_experiment --golden-sample`. Variant strings must match Settings.variant_suffix.
+top_k: [5, 10]
+variant:
+  - "calib_3small_c300o50"           # baseline: 3-small, base embed_text
+  - "calib_3small_c300o50_keywords"  # 3-small + TMDB keywords (the lever)
+  - "calib_minilm_c300o50_keywords"  # free local embedder + keywords
+hybrid: [false]
+rerank: [false]
+query_rewrite: [false]

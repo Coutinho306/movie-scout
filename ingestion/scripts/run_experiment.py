@@ -44,6 +44,23 @@ def _parse_args() -> argparse.Namespace:
         help="token overlap between review chunks",
     )
     parser.add_argument(
+        "--embed-text-recipe",
+        choices=["base", "keywords"],
+        default=None,
+        help="movie embed_text recipe: base or base+TMDB keywords",
+    )
+    parser.add_argument(
+        "--golden-sample",
+        action="store_true",
+        help="ingest only the fixed calibration sample (golden targets + distractors)",
+    )
+    parser.add_argument(
+        "--tmdb-ids",
+        type=str,
+        default=None,
+        help="comma-separated tmdb ids to ingest (overrides discovery); e.g. 550,680",
+    )
+    parser.add_argument(
         "--rebuild",
         action="store_true",
         help="drop and recreate this variant's Qdrant collections before loading",
@@ -77,8 +94,22 @@ def main() -> None:
         overrides["chunk_max_tokens"] = args.chunk_max_tokens
     if args.chunk_overlap_tokens is not None:
         overrides["chunk_overlap_tokens"] = args.chunk_overlap_tokens
+    if args.embed_text_recipe is not None:
+        overrides["embed_text_recipe"] = args.embed_text_recipe
     if overrides:
         settings = settings.model_copy(update=overrides)
+
+    explicit_tmdb_ids: list[int] | None = None
+    if args.tmdb_ids:
+        explicit_tmdb_ids = [int(x) for x in args.tmdb_ids.split(",") if x.strip()]
+    elif args.golden_sample:
+        from ingestion.scripts.build_calibration_sample import build_sample
+
+        explicit_tmdb_ids = build_sample(distractors=300)
+
+    if explicit_tmdb_ids is not None:
+        # Any sample ingest lives in the disposable calib_ namespace, never prod.
+        settings = settings.model_copy(update={"sample": True})
 
     if settings._is_default_variant():
         _logger.warning(
@@ -107,6 +138,7 @@ def main() -> None:
         rebuild=args.rebuild,
         refresh_taste=args.refresh_taste,
         skip_taste=args.skip_taste,
+        explicit_tmdb_ids=explicit_tmdb_ids,
     )
 
 

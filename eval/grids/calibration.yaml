@@ -6,9 +6,11 @@
 # `run_experiment --golden-sample`. Variant strings must match Settings.variant_suffix.
 top_k: [5, 10]
 variant:
-  - "calib_3small_c300o50"           # baseline: 3-small, base embed_text
-  - "calib_3small_c300o50_keywords"  # 3-small + TMDB keywords (the lever)
-  - "calib_minilm_c300o50_keywords"  # free local embedder + keywords
+  - "calib_3small_c300o50_keywords"    # round-1 winner (baseline)
+  - "calib_3large_c300o50_keywords"    # API upper bound
+  - "calib_bgesmall_c300o50_keywords"  # free-tier challenger (replaces minilm)
+  - "calib_3small_c150o30_keywords"    # chunk sweep: smaller (reviews only; movie metrics expected flat)
+  - "calib_3small_c600o100_keywords"   # chunk sweep: larger
 hybrid: [false]
 rerank: [false]
 query_rewrite: [false]

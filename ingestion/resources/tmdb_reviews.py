@@ -1,26 +1,23 @@
 """TMDB reviews — fetch, chunk, embed, load Qdrant."""
 
 import logging
-import time
 import uuid
 
-import requests
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 
 from ingestion.chunking import chunk_review
 from ingestion.embedding import Embedder
+from ingestion.resources.tmdb_movies import TMDB_BASE, tmdb_get
 
 _logger = logging.getLogger(__name__)
-TMDB_BASE = "https://api.themoviedb.org/3"
 
 
 def fetch_reviews(tmdb_id: int, api_key: str) -> list[dict]:
-    resp = requests.get(
+    resp = tmdb_get(
         f"{TMDB_BASE}/movie/{tmdb_id}/reviews",
+        api_key=api_key,
         params={"page": 1},
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=10,
     )
     if resp.status_code != 200:
         return []
@@ -43,7 +40,6 @@ def load_tmdb_reviews(
 
     for tmdb_id in candidate_tmdb_ids:
         reviews = fetch_reviews(tmdb_id, api_key)
-        time.sleep(0.25)
 
         for review in reviews:
             author = review.get("author", "unknown")

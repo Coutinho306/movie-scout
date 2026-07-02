@@ -17,6 +17,54 @@ _logger = logging.getLogger(__name__)
 TMDB_BASE = "https://api.themoviedb.org/3"
 DISCOVERY_GENRES = [18, 28, 53]  # Drama, Action, Thriller
 
+# Default inter-request delay in seconds.  Well under TMDB's ~50 req/s limit;
+# keep ≤ 0.05 so ~15 k films + reviews complete under 1 h wall clock.
+FETCH_PACE_SECONDS: float = 0.05
+
+# Retry budget for transient TMDB errors (429 / 5xx).
+_MAX_RETRIES: int = 5
+_RETRY_BACKOFF_BASE: float = 2.0  # seconds; doubles each attempt
+
+
+def tmdb_get(
+    url: str,
+    *,
+    api_key: str,
+    params: dict | None = None,
+    timeout: int = 10,
+) -> requests.Response:
+    """GET a TMDB URL with automatic retry on 429/5xx.
+
+    Respects the ``Retry-After`` response header when present.
+    Raises ``requests.HTTPError`` for non-retryable 4xx errors and for
+    exhausted retries.  Applies ``FETCH_PACE_SECONDS`` after each successful
+    (non-retry) request.
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    attempt = 0
+    while True:
+        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if resp.status_code in (429, 500, 502, 503, 504):
+            attempt += 1
+            if attempt > _MAX_RETRIES:
+                resp.raise_for_status()
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after is not None:
+                wait = float(retry_after)
+            else:
+                wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+            _logger.warning(
+                '{"step":"tmdb_retry","status":%d,"attempt":%d,"wait_s":%.1f}',
+                resp.status_code,
+                attempt,
+                wait,
+            )
+            time.sleep(wait)
+            continue
+        # Non-retryable error — let caller decide (raise_for_status or check code).
+        time.sleep(FETCH_PACE_SECONDS)
+        return resp
+
 
 def discover_candidate_tmdb_ids(
     api_key: str,
@@ -27,33 +75,29 @@ def discover_candidate_tmdb_ids(
     ids: set[int] = set()
 
     for page in range(1, pages + 1):
-        resp = requests.get(
+        resp = tmdb_get(
             f"{TMDB_BASE}/movie/popular",
+            api_key=api_key,
             params={"page": page},
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10,
         )
         resp.raise_for_status()
         for r in resp.json().get("results", []):
             ids.add(r["id"])
-        time.sleep(0.25)
 
     for genre_id in genre_ids:
         for page in range(1, pages + 1):
-            resp = requests.get(
+            resp = tmdb_get(
                 f"{TMDB_BASE}/discover/movie",
+                api_key=api_key,
                 params={
                     "sort_by": "popularity.desc",
                     "with_genres": genre_id,
                     "page": page,
                 },
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
             )
             resp.raise_for_status()
             for r in resp.json().get("results", []):
                 ids.add(r["id"])
-            time.sleep(0.25)
 
     return list(ids)
 
@@ -61,11 +105,10 @@ def discover_candidate_tmdb_ids(
 def fetch_movie_metadata(
     tmdb_id: int, api_key: str, *, embed_text_recipe: str = "base"
 ) -> Optional[TmdbMovieMetadata]:
-    resp = requests.get(
+    resp = tmdb_get(
         f"{TMDB_BASE}/movie/{tmdb_id}",
+        api_key=api_key,
         params={"append_to_response": "credits,keywords"},
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=10,
     )
     if resp.status_code != 200:
         return None
@@ -129,7 +172,6 @@ def load_tmdb_movies(
         metadata = fetch_movie_metadata(
             tmdb_id, api_key, embed_text_recipe=embed_text_recipe
         )
-        time.sleep(0.25)
         if metadata is None:
             continue
 

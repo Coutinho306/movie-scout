@@ -98,13 +98,16 @@ def load_or_compute_taste(
 
 
 def load_watched_tmdb_ids(export_dir: Path, tmdb_api_key: str) -> set[int]:
+    from ingestion.resources.tmdb_movies import FETCH_PACE_SECONDS
+    import time
+
     pool, _ = load_letterboxd_csvs(export_dir)
     ids: set[int] = set()
     for film in pool:
         result = search_tmdb(film.name, film.year, tmdb_api_key)
         if result:
             ids.add(result.tmdb_id)
-        import time; time.sleep(0.25)
+        time.sleep(FETCH_PACE_SECONDS)
     _logger.info('{"step":"watched_ids_resolved","count":%d}', len(ids))
     return ids
 

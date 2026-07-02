@@ -133,7 +133,9 @@ def load_tmdb_movies(
         if metadata is None:
             continue
 
-        vector = embedder.embed_single(metadata.embed_text)
+        # embed_texts is the document path; embed_single is reserved for queries
+        # (it may prepend a query instruction, e.g. for bge models).
+        vector = embedder.embed_texts([metadata.embed_text])[0]
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(tmdb_id)))
 
         client.upsert(

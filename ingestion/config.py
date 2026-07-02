@@ -11,6 +11,7 @@ _EMBEDDER_TO_TOKEN: dict[str, str] = {
     "openai-3-small": "3small",
     "openai-3-large": "3large",
     "minilm": "minilm",
+    "bge-small": "bgesmall",
 }
 _TOKEN_TO_EMBEDDER = {v: k for k, v in _EMBEDDER_TO_TOKEN.items()}
 
@@ -22,7 +23,7 @@ _DEFAULT_RECIPE = "base"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    embedder: Literal["openai-3-small", "openai-3-large", "minilm"] = "openai-3-small"
+    embedder: Literal["openai-3-small", "openai-3-large", "minilm", "bge-small"] = "openai-3-small"
     chunk_max_tokens: int = _DEFAULT_CHUNK_MAX
     chunk_overlap_tokens: int = _DEFAULT_CHUNK_OVERLAP
     # What text we embed per movie: "base" (title/genres/cast/tagline/overview) or
@@ -34,7 +35,12 @@ class Settings(BaseSettings):
 
     @property
     def embedder_dim(self) -> int:
-        return {"openai-3-small": 1536, "openai-3-large": 3072, "minilm": 384}[self.embedder]
+        return {
+            "openai-3-small": 1536,
+            "openai-3-large": 3072,
+            "minilm": 384,
+            "bge-small": 384,
+        }[self.embedder]
 
     @property
     def variant_suffix(self) -> str:

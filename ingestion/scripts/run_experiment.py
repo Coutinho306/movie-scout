@@ -27,7 +27,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--embedder",
-        choices=["openai-3-small", "openai-3-large", "minilm"],
+        choices=["openai-3-small", "openai-3-large", "minilm", "bge-small"],
         default=None,
         help="embedding model variant",
     )

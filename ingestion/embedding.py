@@ -15,6 +15,9 @@ _logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class Embedder(Protocol):
+    """embed_texts = document path (ingest); embed_single = query path
+    (may prepend a model-specific query instruction, e.g. bge)."""
+
     model: str
     dim: int
 
@@ -54,9 +57,12 @@ class OpenAIEmbedder:
 
 
 class LocalEmbedder:
-    def __init__(self, model: str = "all-MiniLM-L6-v2") -> None:
+    def __init__(self, model: str = "all-MiniLM-L6-v2", query_prefix: str = "") -> None:
         self.model = model
         self.dim = 384
+        # Some models (e.g. bge) expect an instruction prepended to *queries* only;
+        # documents are embedded as-is via embed_texts.
+        self.query_prefix = query_prefix
         self._st = None
 
     def _get_st(self):  # type: ignore[return]
@@ -71,7 +77,7 @@ class LocalEmbedder:
         return [v.tolist() for v in vecs]
 
     def embed_single(self, text: str) -> list[float]:
-        return self.embed_texts([text])[0]
+        return self.embed_texts([self.query_prefix + text])[0]
 
 
 _OPENAI_MODELS = {
@@ -79,9 +85,13 @@ _OPENAI_MODELS = {
     "openai-3-large": ("text-embedding-3-large", 3072),
 }
 
+_BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
 
 def get_embedder(settings: Settings) -> Embedder:
     if settings.embedder in _OPENAI_MODELS:
         model_name, dim = _OPENAI_MODELS[settings.embedder]
         return OpenAIEmbedder(model=model_name, dim=dim)
+    if settings.embedder == "bge-small":
+        return LocalEmbedder(model="BAAI/bge-small-en-v1.5", query_prefix=_BGE_QUERY_PREFIX)
     return LocalEmbedder()

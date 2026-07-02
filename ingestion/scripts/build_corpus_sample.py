@@ -6,18 +6,18 @@ caches the result to ``data/corpus_sample.json``.  A second run without
 ``--force`` reads the cache and returns immediately — no new TMDB calls.
 
 Tier targets (approximate, TMDB catalogue changes over time):
-  blockbuster  vote_count ≥ 5000                        ~1 026 films
-  popular      vote_count 1000–4999                     ~3 849 films
-  ok           vote_count 200–999                       ~9 737 films
-  niche        Documentary/Western/War/Music/History/TV Movie
-               vote_count 50–199 AND vote_average ≥ 6.5  ~600 films (capped)
-  lang_pt_es   pt/es original language, vote_count ≥ 20
-               AND vote_average ≥ 6.5                    ~300 films (capped)
-  recent       primary_release_date ≥ today-90d,
-               popularity.desc                           ~200 films (capped)
+  blockbuster     vote_count ≥ 5000                        ~1 026 films
+  popular         vote_count 1000–4999                     ~3 849 films
+  mid             vote_count 200–999                       ~9 737 films
+  niche_fill      Documentary/Western/War/Music/History/TV Movie
+                  vote_count 50–199 AND vote_average ≥ 6.5  ~600 films (capped)
+  regional_pt_es  pt/es original language, vote_count ≥ 20
+                  AND vote_average ≥ 6.5                    ~300 films (capped)
+  recent_90d      primary_release_date ≥ today-90d,
+                  popularity.desc                           ~200 films (capped)
 
 TMDB caps pages at 500 (20 results/page → 10 000 results per query); the
-blockbuster and popular tiers stay well under that limit.  The ok tier
+blockbuster and popular tiers stay well under that limit.  The mid tier
 (~9 700 films) may need to be split by year range if TMDB ever truncates
 it, but currently fits in ≤ 500 pages.
 
@@ -160,7 +160,7 @@ def build_corpus(*, force: bool = False) -> list[int]:
     )
     popular_new = _merge(popular_ids)
 
-    # --- Tier 3: ok (vote_count 200–999) ---
+    # --- Tier 3: mid (vote_count 200–999) ---
     mid_ids = _discover_tier(
         api_key,
         params={

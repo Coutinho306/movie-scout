@@ -53,6 +53,8 @@ class TmdbMovieMetadata(BaseModel):
     runtime: int
     vote_average: float
     popularity: float
+    keywords: list[str] = []
+    themes: list[str] = []  # reserved for feature C (LLM-extracted); empty for now
     embed_text: str
 
 

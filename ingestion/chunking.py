@@ -30,10 +30,12 @@ def chunk_review(
     return chunks
 
 
-def build_movie_embed_text(metadata: TmdbMovieMetadata) -> str:
+def build_movie_embed_text(
+    metadata: TmdbMovieMetadata, *, recipe: str = "base"
+) -> str:
     genres = ", ".join(metadata.genres)
     cast = ", ".join(metadata.cast[:5])  # top 5
-    return (
+    text = (
         f"{metadata.title} ({metadata.year}). "
         f"Genres: {genres}. "
         f"Director: {metadata.director}. "
@@ -41,3 +43,8 @@ def build_movie_embed_text(metadata: TmdbMovieMetadata) -> str:
         f"{metadata.tagline}. "
         f"{metadata.overview}"
     )
+    if recipe == "keywords" and metadata.keywords:
+        # TMDB keywords name themes/motifs the overview rarely states — the lever
+        # the pre-spike identified for thematic queries.
+        text += f" Keywords: {', '.join(metadata.keywords)}."
+    return text

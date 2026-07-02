@@ -59,7 +59,7 @@ def discover_candidate_tmdb_ids(
 
 
 def fetch_movie_metadata(
-    tmdb_id: int, api_key: str
+    tmdb_id: int, api_key: str, *, embed_text_recipe: str = "base"
 ) -> Optional[TmdbMovieMetadata]:
     resp = requests.get(
         f"{TMDB_BASE}/movie/{tmdb_id}",
@@ -78,6 +78,7 @@ def fetch_movie_metadata(
         "",
     )
     release_year = int((data.get("release_date") or "0000")[:4] or 0)
+    keywords = [k["name"] for k in data.get("keywords", {}).get("keywords", [])]
 
     metadata = TmdbMovieMetadata(
         tmdb_id=tmdb_id,
@@ -91,9 +92,10 @@ def fetch_movie_metadata(
         runtime=data.get("runtime") or 0,
         vote_average=data.get("vote_average", 0.0),
         popularity=data.get("popularity", 0.0),
+        keywords=keywords,
         embed_text="",
     )
-    metadata.embed_text = build_movie_embed_text(metadata)
+    metadata.embed_text = build_movie_embed_text(metadata, recipe=embed_text_recipe)
     return metadata
 
 
@@ -107,18 +109,26 @@ def load_tmdb_movies(
     *,
     discovery_pages: int = 5,
     genre_ids: list[int] = DISCOVERY_GENRES,
+    explicit_tmdb_ids: list[int] | None = None,
+    embed_text_recipe: str = "base",
 ) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
 
-    candidate_ids = discover_candidate_tmdb_ids(
-        api_key, pages=discovery_pages, genre_ids=genre_ids
-    )
-    candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
+    if explicit_tmdb_ids is not None:
+        # Calibration sample: ingest exactly this fixed id list, no discovery.
+        candidate_ids = list(explicit_tmdb_ids)
+    else:
+        candidate_ids = discover_candidate_tmdb_ids(
+            api_key, pages=discovery_pages, genre_ids=genre_ids
+        )
+        candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
     _logger.info('{"step":"tmdb_movies_candidates","count":%d}', len(candidate_ids))
 
     loaded = 0
     for tmdb_id in candidate_ids:
-        metadata = fetch_movie_metadata(tmdb_id, api_key)
+        metadata = fetch_movie_metadata(
+            tmdb_id, api_key, embed_text_recipe=embed_text_recipe
+        )
         time.sleep(0.25)
         if metadata is None:
             continue

@@ -10,8 +10,8 @@ from agent.nodes.rewrite import rewrite_node
 MAX_TURNS = 4
 
 
-def _state(plan: list[str], turns: int) -> dict:
-    return {"plan": plan, "orchestrator_turns": turns}
+def _state(plan: list[str], turns: int, intent: str | None = None) -> dict:
+    return {"plan": plan, "orchestrator_turns": turns, "intent": intent}
 
 
 # --- _route (AC #4) -------------------------------------------------------
@@ -50,6 +50,26 @@ def test_route_repeat_guard_web() -> None:
 def test_route_non_repeat_routes_normally() -> None:
     # web then rag is a legitimate sequence — not a back-to-back duplicate.
     assert _route(_state(["web", "rag"], 2), MAX_TURNS) == "rewrite"
+
+
+# --- _route inform intent -------------------------------------------------
+
+
+def test_route_inform_synthesize_goes_to_inform_node() -> None:
+    assert _route(_state(["synthesize"], 1, intent="inform"), MAX_TURNS) == "synthesize_inform"
+
+
+def test_route_inform_turn_cap_still_informs() -> None:
+    assert _route(_state(["rag"], MAX_TURNS, intent="inform"), MAX_TURNS) == "synthesize_inform"
+
+
+def test_route_inform_repeat_guard_still_informs() -> None:
+    assert _route(_state(["rag", "rag"], 2, intent="inform"), MAX_TURNS) == "synthesize_inform"
+
+
+def test_route_inform_still_runs_rag_first() -> None:
+    # inform must retrieve the film before answering — rag action still routes to rewrite.
+    assert _route(_state(["rag"], 1, intent="inform"), MAX_TURNS) == "rewrite"
 
 
 # --- rewrite_node (AC #2, #3) --------------------------------------------

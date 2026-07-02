@@ -22,6 +22,7 @@ def run(user_query: str, settings: AgentSettings | None = None) -> AgentRunResul
     initial_state: AgentState = {
         "user_query": user_query,
         "rewritten_query": None,
+        "intent": None,
         "plan": [],
         "rag_hits": [],
         "web_hits": [],

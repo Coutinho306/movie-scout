@@ -17,6 +17,7 @@ class AgentState(TypedDict):
 
     user_query: str
     rewritten_query: str | None
+    intent: str | None  # "recommend" | "inform" — classified once, first orchestrator turn
     plan: list[str]
     rag_hits: list[dict]  # serialized MovieHit dicts
     web_hits: list[dict]  # serialized WebHit dicts

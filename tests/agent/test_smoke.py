@@ -19,3 +19,13 @@ def test_smoke_run() -> None:
         assert rec.tmdb_id > 0
         assert rec.title
         assert rec.year > 0
+
+
+@pytest.mark.integration
+def test_smoke_inform_returns_prose_no_recs() -> None:
+    result = run("What do you know about Arrival?")
+
+    assert result.final_answer
+    # inform mode answers with prose about the film — no recommendation citations.
+    assert result.citations == []
+    assert result.orchestrator_turns <= 4

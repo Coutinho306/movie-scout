@@ -82,3 +82,32 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
         "token_count": state.get("token_count", 0) + tokens,
         "cost_usd": state.get("cost_usd", 0.0) + cost,
     }
+
+
+def synthesize_inform_node(state: AgentState, settings: AgentSettings) -> dict:
+    """Answer an informational query with prose about one film; sets no recs.
+
+    Used when the orchestrator classified ``intent == "inform"``. Grounds the
+    answer on the film's TMDB ``overview`` (carried in ``rag_hits``) plus any web
+    hits, and returns plain text — never a recommendation list.
+    """
+    cfg = settings
+    llm = ChatOpenAI(model=cfg.model_agent, temperature=cfg.temperature)
+
+    template = load_prompt("inform")
+    prompt = template.format(
+        user_query=state["user_query"],
+        rag_hits=json.dumps(state.get("rag_hits", []), ensure_ascii=False),
+        web_hits=json.dumps(state.get("web_hits", []), ensure_ascii=False),
+    )
+    response = llm.invoke(prompt)
+    answer = (response.content or "").strip() if isinstance(response.content, str) else ""
+
+    tokens, cost = usage_from_message(response, cfg.model_agent)
+
+    return {
+        "final_answer": answer or "No information found for that film.",
+        "recs": [],
+        "token_count": state.get("token_count", 0) + tokens,
+        "cost_usd": state.get("cost_usd", 0.0) + cost,
+    }

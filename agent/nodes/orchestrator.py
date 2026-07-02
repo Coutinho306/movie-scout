@@ -15,6 +15,17 @@ from agent.state import AgentState
 logger = logging.getLogger(__name__)
 
 _VALID_ACTIONS = {"rag", "web", "synthesize"}
+_VALID_INTENTS = {"recommend", "inform"}
+
+
+def _resolve_intent(existing: str | None, parsed: object) -> str:
+    """Sticky intent: keep the first turn's classification; ignore later turns.
+
+    Falls back to "recommend" when unset and the parsed value is missing/invalid.
+    """
+    if existing in _VALID_INTENTS:
+        return existing
+    return parsed if parsed in _VALID_INTENTS else "recommend"
 
 
 def _build_prompt(state: AgentState, cfg: AgentSettings) -> str:
@@ -43,9 +54,11 @@ def orchestrator_node(state: AgentState, settings: AgentSettings) -> dict:
     prompt = _build_prompt(state, cfg)
     response = llm.invoke(prompt)
 
+    parsed_intent: object = None
     try:
         action_dict = parser.invoke(response)
         action = action_dict.get("action", "synthesize")
+        parsed_intent = action_dict.get("intent")
     except Exception as exc:  # noqa: BLE001 — malformed JSON falls back to synthesize
         logger.warning("Orchestrator JSON parse failed: %s", exc)
         action = "synthesize"
@@ -53,9 +66,12 @@ def orchestrator_node(state: AgentState, settings: AgentSettings) -> dict:
     if action not in _VALID_ACTIONS:
         action = "synthesize"
 
+    intent = _resolve_intent(state.get("intent"), parsed_intent)
+
     tokens, cost = usage_from_message(response, cfg.model_orchestrator)
 
     return {
+        "intent": intent,
         "orchestrator_turns": state.get("orchestrator_turns", 0) + 1,
         "plan": state.get("plan", []) + [action],
         "token_count": state.get("token_count", 0) + tokens,

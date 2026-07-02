@@ -56,12 +56,18 @@ railway up
 | `QDRANT_URL` | api | Qdrant Cloud cluster URL |
 | `QDRANT_API_KEY` | api | Qdrant Cloud key |
 | `ALLOWED_ORIGINS` | api | frontend domain for CORS |
+| `RATE_LIMIT` | api | per-client `/ask` limit (default `10/minute`) |
 | `API_BASE_URL` | frontend | api service public URL |
 | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY` | api | optional LangSmith traces |
 
 ## Notes
 - The API image preloads the cross-encoder rerank model at build, so the first
   request isn't slow.
+- **Grafana**: the local compose runs Grafana with anonymous Viewer access for
+  convenience. Do **not** expose that publicly — if you deploy Grafana, set
+  `GF_AUTH_ANONYMOUS_ENABLED=false` and a strong `GF_SECURITY_ADMIN_PASSWORD`
+  (the compose default is `admin`). The dashboards expose query logs and cost
+  data. Simplest option: don't publish the Grafana port at all on Railway.
 - Postgres schema is bootstrapped by `infra/postgres/init/01-schema.sql` locally;
   on Railway-managed Postgres, apply `infra/postgres/schema.sql` once via
   `railway connect postgres` (or `psql "$DATABASE_URL" -f infra/postgres/schema.sql`).

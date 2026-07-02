@@ -156,6 +156,7 @@ def load_tmdb_movies(
                         "runtime": metadata.runtime,
                         "vote_average": metadata.vote_average,
                         "popularity": metadata.popularity,
+                        "themes": metadata.themes,
                     },
                 )
             ],

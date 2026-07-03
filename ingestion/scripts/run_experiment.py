@@ -45,9 +45,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--embed-text-recipe",
-        choices=["base", "keywords"],
+        choices=["base", "keywords", "themes"],
         default=None,
-        help="movie embed_text recipe: base or base+TMDB keywords",
+        help="movie embed_text recipe: base, keywords, or themes (keywords + LLM abstract sentences)",
     )
     parser.add_argument(
         "--golden-sample",

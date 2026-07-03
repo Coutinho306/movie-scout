@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from qdrant_client.models import (
@@ -108,7 +109,20 @@ def search_movies(
     collection = ingestion.movies_collection
     limit = k if k is not None else settings.top_k
     embedder = get_embedder(ingestion)
-    query_vec = embedder.embed_single(query)
+
+    if settings.query_rewrite:
+        from retrieval.hyde import hyde_embed
+
+        _blend_raw = os.environ.get("HYDE_BLEND_ALPHA", "").strip()
+        blend_alpha: float | None = float(_blend_raw) if _blend_raw else None
+        query_vec = hyde_embed(query, embedder, blend_alpha=blend_alpha)
+        _logger.debug(
+            '{"step":"hyde","blend_alpha":%s}',
+            repr(blend_alpha),
+        )
+    else:
+        query_vec = embedder.embed_single(query)
+
     client = get_qdrant_client()
     qdrant_filter = _build_filter(filters)
 

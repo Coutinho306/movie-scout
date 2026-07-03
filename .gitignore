@@ -37,6 +37,7 @@ data/taste_profile.json
 data/taste_profile.npy
 data/calibration_sample.json
 data/corpus_sample.json
+data/diagnostic_suite.json
 
 # eval runs — ignore CSV/JSON artifacts, keep source
 eval/runs/*

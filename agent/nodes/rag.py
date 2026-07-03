@@ -15,8 +15,7 @@ from agent.nodes import load_prompt
 from agent.state import AgentState
 from agent.tools.taste_matcher import match_taste_tool
 from agent.tools.tmdb_providers import get_providers
-from agent.tools.tmdb_search import search_tmdb
-from agent.tools.vector_search_movies import search_movies_tool, similar_movies_tool
+from agent.tools.vector_search_movies import search_movies_tool
 from agent.tools.vector_search_reviews import search_reviews_tool
 
 logger = logging.getLogger(__name__)
@@ -62,36 +61,7 @@ def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> lis
         """Look up which streaming services offer a film by tmdb_id (region-specific flatrate providers)."""
         return get_providers(tmdb_id, region=region)
 
-    @tool
-    def resolve_film(title: str, year: int | None = None) -> dict | None:
-        """Resolve a film title to its TMDB catalog entry. Returns a dict with tmdb_id, or None if not found.
-
-        Call this first when the user names a specific seed film (e.g. 'a film like X', 'same theme as X').
-        Use the returned tmdb_id with similar_movies to find films similar to the seed.
-        """
-        tmdb_id = search_tmdb(title, year)
-        if tmdb_id is None:
-            return None
-        return {"tmdb_id": tmdb_id, "title": title, "year": year}
-
-    @tool
-    def similar_movies(seed_tmdb_id: int, k: int = top_k) -> list[dict]:
-        """Find movies similar to a seed film using its stored vector embedding.
-
-        Use this after resolve_film to find films like a named seed.
-        The seed film itself is always excluded from results.
-        Returns [] if the seed is not in the corpus — fall back to search_movies in that case.
-        """
-        hits = similar_movies_tool(seed_tmdb_id, k=k)
-        dicts = [h.model_dump() for h in hits]
-        seen = {d["tmdb_id"] for d in collected}
-        for d in dicts:
-            if d["tmdb_id"] not in seen:
-                collected.append(d)
-                seen.add(d["tmdb_id"])
-        return dicts
-
-    return [search_movies, search_reviews, match_taste, tmdb_lookup_providers, resolve_film, similar_movies]
+    return [search_movies, search_reviews, match_taste, tmdb_lookup_providers]
 
 
 def build_rag_agent(settings: AgentSettings, collected: list[dict]):

@@ -1,5 +1,15 @@
-"""Tool: hybrid vector search and point-similarity search over tmdb_movies."""
+"""Tool: hybrid vector search and point-similarity search over tmdb_movies.
 
+search_movies_tool tries to resolve a named seed film deterministically
+(regex extraction + TMDB lookup, no LLM call) before falling back to plain
+text embedding. This removes the LLM tool-choice ambiguity that caused
+inconsistent routing between a raw text search and a seed-similarity search
+for the same query across separate runs (see specs/features/
+agent-named-film-resolution/SPEC.md's manual validation notes).
+"""
+
+from agent.tools.seed_film import extract_seed_title
+from agent.tools.tmdb_search import search_tmdb
 from retrieval.config import RetrievalSettings
 from retrieval.models import MovieFilters, MovieHit
 from retrieval.movies import recommend_similar, search_movies
@@ -12,6 +22,15 @@ def search_movies_tool(
     k: int = 10,
     filters: MovieFilters | None = None,
 ) -> list[MovieHit]:
+    seed_title = extract_seed_title(query)
+    if seed_title:
+        seed_tmdb_id = search_tmdb(seed_title)
+        if seed_tmdb_id is not None:
+            hits = similar_movies_tool(
+                seed_tmdb_id, settings=settings, k=k, filters=filters
+            )
+            if hits:
+                return hits
     return search_movies(query, settings=settings or RetrievalSettings(), k=k, filters=filters)
 
 

@@ -229,7 +229,10 @@ class TestSimilarMoviesTool:
 
 
 # ---------------------------------------------------------------------------
-# _build_rag_tools: resolve_film + similar_movies wiring
+# _build_rag_tools: search_movies is the only movie-search tool now (seed
+# resolution collapsed into search_movies_tool itself, no separate
+# resolve_film/similar_movies tools exposed to the LLM — see
+# agent/tools/vector_search_movies.py and agent/tools/seed_film.py).
 # ---------------------------------------------------------------------------
 
 
@@ -240,72 +243,103 @@ class TestBuildRagTools:
         tools = _build_rag_tools(collected or [], region="US", top_k=10)
         return [t.name for t in tools]
 
-    def test_resolve_film_in_tool_list(self) -> None:
-        names = self._get_tool_names()
-        assert "resolve_film" in names
-
-    def test_similar_movies_in_tool_list(self) -> None:
-        names = self._get_tool_names()
-        assert "similar_movies" in names
-
     def test_existing_tools_still_present(self) -> None:
         names = self._get_tool_names()
         for expected in ("search_movies", "search_reviews", "match_taste", "tmdb_lookup_providers"):
             assert expected in names
 
-    def test_resolve_film_returns_tmdb_id_for_known_title(self) -> None:
-        """resolve_film wraps search_tmdb and returns its tmdb_id."""
-        from agent.nodes.rag import _build_rag_tools
+    def test_no_separate_resolve_or_similar_tools_exposed(self) -> None:
+        """resolve_film/similar_movies are no longer separate agent-visible tools."""
+        names = self._get_tool_names()
+        assert "resolve_film" not in names
+        assert "similar_movies" not in names
 
-        tools = _build_rag_tools([], region="US", top_k=10)
-        resolve_film = next(t for t in tools if t.name == "resolve_film")
 
-        with patch("agent.nodes.rag.search_tmdb", return_value=12345) as mock_tmdb:
-            result = resolve_film.invoke({"title": "Arrival", "year": 2016})
+# ---------------------------------------------------------------------------
+# seed_film extraction + search_movies_tool collapse
+# ---------------------------------------------------------------------------
 
-        mock_tmdb.assert_called_once_with("Arrival", 2016)
-        assert result["tmdb_id"] == 12345
-        assert result["title"] == "Arrival"
 
-    def test_resolve_film_returns_none_when_not_found(self) -> None:
-        from agent.nodes.rag import _build_rag_tools
+class TestSeedFilmExtraction:
+    def test_extracts_seed_from_common_phrasings(self) -> None:
+        from agent.tools.seed_film import extract_seed_title
 
-        tools = _build_rag_tools([], region="US", top_k=10)
-        resolve_film = next(t for t in tools if t.name == "resolve_film")
+        assert extract_seed_title("a film like Arrival") == "Arrival"
+        assert (
+            extract_seed_title("a film with the same theme as Glass Onion")
+            == "Glass Onion"
+        )
+        assert extract_seed_title("movies like Glass Onion") == "Glass Onion"
+        assert (
+            extract_seed_title("a movie similar to The Prestige") == "The Prestige"
+        )
 
-        with patch("agent.nodes.rag.search_tmdb", return_value=None):
-            result = resolve_film.invoke({"title": "NonExistentFilm12345"})
+    def test_returns_none_for_no_seed(self) -> None:
+        from agent.tools.seed_film import extract_seed_title
 
-        assert result is None
+        assert extract_seed_title("a dark psychological thriller about identity") is None
 
-    def test_similar_movies_appends_to_collected(self) -> None:
-        """similar_movies tool appends hits to the run-local collected list."""
-        from agent.nodes.rag import _build_rag_tools
+    def test_extracts_seed_from_rewritten_long_sentence(self) -> None:
+        """retrieval/rewrite.py's query_rewrite expands short seed queries into
+        long descriptive sentences — extraction must not swallow the trailing
+        description as part of the title (regression: greedy end-of-string
+        capture previously captured everything after 'Arrival')."""
+        from agent.tools.seed_film import extract_seed_title
 
-        collected: list[dict] = []
-        tools = _build_rag_tools(collected, region="US", top_k=10)
-        similar_movies_tool_fn = next(t for t in tools if t.name == "similar_movies")
+        rewritten = (
+            "a thought-provoking science fiction film similar to Arrival, "
+            "featuring complex narratives, themes of communication and time, "
+            "and strong character development, preferably directed by Denis "
+            "Villeneuve or with a similar artistic style."
+        )
+        assert extract_seed_title(rewritten) == "Arrival"
 
-        hit = _make_hit(tmdb_id=555)
-        with patch("agent.nodes.rag.similar_movies_tool", return_value=[hit]):
-            result = similar_movies_tool_fn.invoke({"seed_tmdb_id": 100, "k": 5})
 
-        assert any(d["tmdb_id"] == 555 for d in collected)
-        assert any(d["tmdb_id"] == 555 for d in result)
+class TestSearchMoviesToolCollapse:
+    def test_resolves_seed_and_delegates_to_similar_movies(self) -> None:
+        """search_movies_tool resolves a named seed and uses similar_movies_tool."""
+        from agent.tools.vector_search_movies import search_movies_tool
 
-    def test_similar_movies_deduplicates_collected(self) -> None:
-        """Hits already in collected are not added again."""
-        from agent.nodes.rag import _build_rag_tools
+        hit = _make_hit(tmdb_id=546554)
+        with patch(
+            "agent.tools.vector_search_movies.search_tmdb", return_value=661374
+        ) as mock_tmdb, patch(
+            "agent.tools.vector_search_movies.similar_movies_tool",
+            return_value=[hit],
+        ) as mock_similar:
+            hits = search_movies_tool("a film with the same theme as Glass Onion", k=5)
 
-        existing = {"tmdb_id": 555, "title": "Film 555", "year": 2020, "overview": "",
-                    "genres": [], "vote_average": 7.0, "score": 0.8,
-                    "taste_score": 0.0, "blended_score": 0.0}
-        collected: list[dict] = [existing]
-        tools = _build_rag_tools(collected, region="US", top_k=10)
-        similar_movies_tool_fn = next(t for t in tools if t.name == "similar_movies")
+        mock_tmdb.assert_called_once_with("Glass Onion")
+        mock_similar.assert_called_once()
+        assert hits == [hit]
 
-        hit = _make_hit(tmdb_id=555)
-        with patch("agent.nodes.rag.similar_movies_tool", return_value=[hit]):
-            similar_movies_tool_fn.invoke({"seed_tmdb_id": 100, "k": 5})
+    def test_falls_back_to_text_search_when_no_seed_named(self) -> None:
+        """No seed phrasing detected -> plain text search, no TMDB lookup."""
+        from agent.tools.vector_search_movies import search_movies_tool
 
-        assert sum(1 for d in collected if d["tmdb_id"] == 555) == 1
+        hit = _make_hit(tmdb_id=1)
+        with patch(
+            "agent.tools.vector_search_movies.search_tmdb"
+        ) as mock_tmdb, patch(
+            "agent.tools.vector_search_movies.search_movies", return_value=[hit]
+        ) as mock_search:
+            hits = search_movies_tool("a dark psychological thriller about identity", k=5)
+
+        mock_tmdb.assert_not_called()
+        mock_search.assert_called_once()
+        assert hits == [hit]
+
+    def test_falls_back_to_text_search_when_seed_not_resolved(self) -> None:
+        """Seed phrasing detected but TMDB lookup misses -> falls back to text search."""
+        from agent.tools.vector_search_movies import search_movies_tool
+
+        hit = _make_hit(tmdb_id=2)
+        with patch(
+            "agent.tools.vector_search_movies.search_tmdb", return_value=None
+        ), patch(
+            "agent.tools.vector_search_movies.search_movies", return_value=[hit]
+        ) as mock_search:
+            hits = search_movies_tool("a film like SomeUnknownFilm12345", k=5)
+
+        mock_search.assert_called_once()
+        assert hits == [hit]

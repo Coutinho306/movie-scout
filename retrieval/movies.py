@@ -11,6 +11,8 @@ from qdrant_client.models import (
     Filter,
     Fusion,
     MatchAny,
+    MatchValue,
+    NearestQuery,
     Prefetch,
     Range,
     ScoredPoint,
@@ -181,5 +183,107 @@ def search_movies(
     # support MatchExcept reliably, so we filter in Python.
     if filters and filters.exclude_tmdb_ids:
         hits = [h for h in hits if h.tmdb_id not in filters.exclude_tmdb_ids]
+
+    return hits
+
+
+def recommend_similar(
+    seed_tmdb_id: int,
+    *,
+    settings: RetrievalSettings,
+    k: int | None = None,
+    filters: MovieFilters | None = None,
+) -> list[MovieHit]:
+    """Return movies similar to the seed film using its stored dense vector.
+
+    Steps:
+    1. Resolve the seed's Qdrant point id by scrolling for payload tmdb_id.
+    2. Retrieve that point with_vectors=True to get its stored dense vector.
+    3. Run a point-to-point vector similarity query (NearestQuery) against
+       the collection, applying _build_filter + post-fetch exclude_tmdb_ids.
+
+    The seed's own tmdb_id is always added to exclude_tmdb_ids so it can never
+    appear in the results (self-recommendation fix).
+
+    Returns [] if the seed point is not found in the corpus so the caller can
+    fall back to text search.
+    """
+    collection = settings.ingestion().movies_collection
+    limit = k if k is not None else settings.top_k
+    client = get_qdrant_client()
+
+    # Step 1: find the seed's point id by filtering payload tmdb_id.
+    seed_filter = Filter(
+        must=[
+            FieldCondition(
+                key="tmdb_id",
+                match=MatchValue(value=seed_tmdb_id),
+            )
+        ]
+    )
+    records, _ = client.scroll(
+        collection_name=collection,
+        scroll_filter=seed_filter,
+        limit=1,
+        with_payload=False,
+        with_vectors=False,
+    )
+    if not records:
+        _logger.debug(
+            '{"step":"recommend_similar","seed_tmdb_id":%d,"found":false}',
+            seed_tmdb_id,
+        )
+        return []
+
+    seed_point_id = records[0].id
+
+    # Step 2: retrieve the seed point with its stored dense vector.
+    retrieved = client.retrieve(
+        collection_name=collection,
+        ids=[seed_point_id],
+        with_payload=False,
+        with_vectors=True,
+    )
+    if not retrieved:
+        return []
+
+    seed_record = retrieved[0]
+    vec = seed_record.vector
+    if isinstance(vec, dict):
+        vec = vec.get("") or next(iter(vec.values()), None)
+    if not vec:
+        _logger.warning(
+            '{"step":"recommend_similar","seed_tmdb_id":%d,"error":"no_vector"}',
+            seed_tmdb_id,
+        )
+        return []
+
+    # Step 3: build exclusion set — seed always excluded.
+    exclude_ids: set[int] = {seed_tmdb_id}
+    if filters and filters.exclude_tmdb_ids:
+        exclude_ids |= filters.exclude_tmdb_ids
+
+    effective_filters = MovieFilters(
+        year_min=filters.year_min if filters else None,
+        year_max=filters.year_max if filters else None,
+        genres=filters.genres if filters else None,
+        vote_min=filters.vote_min if filters else None,
+        exclude_tmdb_ids=None,  # handled post-fetch
+    )
+    qdrant_filter = _build_filter(effective_filters)
+
+    results = client.query_points(
+        collection_name=collection,
+        query=NearestQuery(nearest=list(vec)),
+        limit=limit,
+        query_filter=qdrant_filter,
+        with_payload=True,
+        with_vectors=True,
+    ).points
+
+    hits = [_point_to_hit(p) for p in results]
+
+    # Post-fetch exclusion (same pattern as search_movies).
+    hits = [h for h in hits if h.tmdb_id not in exclude_ids]
 
     return hits

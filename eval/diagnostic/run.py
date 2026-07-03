@@ -34,6 +34,7 @@ from eval.diagnostic.build_suite import build_diagnostic_suite
 from eval.diagnostic.configs import CONFIGS, DiagnosticConfig
 from eval.diagnostic.tiers import DiagnosticSuite, TierQuery
 from eval.metrics.retrieval import mrr, ndcg_at_k, recall_at_k
+from ingestion.config import Settings as IngestionSettings
 from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
 from retrieval.rerank import cross_encode_rerank
@@ -84,8 +85,21 @@ def _run_query(
     return top10_ids, top50_ids
 
 
-def _make_settings(cfg: DiagnosticConfig) -> RetrievalSettings:
-    return RetrievalSettings(**cfg.settings_kwargs)
+def _make_settings(
+    cfg: DiagnosticConfig,
+    ingestion: IngestionSettings | None = None,
+) -> RetrievalSettings:
+    """Build RetrievalSettings for a config, optionally pinning an ingestion variant.
+
+    When ``ingestion`` is provided, the settings are pinned to that variant's
+    collection and vector space via ``with_ingestion()``, so ``search_movies``
+    queries the correct (e.g. ``calib_``-prefixed) collection instead of the
+    production defaults read from ``.env``.
+    """
+    rs = RetrievalSettings(**cfg.settings_kwargs)
+    if ingestion is not None:
+        rs = rs.with_ingestion(ingestion)
+    return rs
 
 
 def _set_hyde_env(cfg: DiagnosticConfig) -> None:
@@ -340,7 +354,22 @@ def _build_summary(
 # Main runner
 # ---------------------------------------------------------------------------
 
-def run(suite: DiagnosticSuite | None = None) -> None:
+def run(
+    suite: DiagnosticSuite | None = None,
+    ingestion: IngestionSettings | None = None,
+) -> None:
+    """Run the diagnostic suite across all config variants.
+
+    Parameters
+    ----------
+    suite:
+        Pre-built DiagnosticSuite.  When ``None``, built from the cache.
+    ingestion:
+        Optional ingestion variant to pin for all retrieval calls.  When
+        provided, ``search_movies`` queries the variant collection (e.g. a
+        ``calib_``-prefixed themes collection) instead of the production
+        default.  ``None`` preserves existing prod behaviour.
+    """
     if suite is None:
         suite = build_diagnostic_suite()
 
@@ -350,7 +379,7 @@ def run(suite: DiagnosticSuite | None = None) -> None:
 
     for cfg in CONFIGS:
         logger.info('{"step":"config_start","name":"%s"}', cfg.name)
-        settings = _make_settings(cfg)
+        settings = _make_settings(cfg, ingestion)
         _set_hyde_env(cfg)
         try:
             for tq in suite.queries:
@@ -464,8 +493,26 @@ def run(suite: DiagnosticSuite | None = None) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
-    run()
+    parser = argparse.ArgumentParser(
+        description="Run the tiered diagnostic suite across all config variants"
+    )
+    parser.add_argument(
+        "--variant",
+        default=None,
+        help=(
+            "Ingestion variant suffix to evaluate against "
+            "(e.g. 'calib_3small_c300o50_themes'). "
+            "Defaults to production collections when omitted."
+        ),
+    )
+    cli_args = parser.parse_args()
+    ingestion_cfg: IngestionSettings | None = None
+    if cli_args.variant:
+        ingestion_cfg = IngestionSettings.from_variant_suffix(cli_args.variant)
+    run(ingestion=ingestion_cfg)

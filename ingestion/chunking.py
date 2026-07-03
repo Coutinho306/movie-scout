@@ -30,9 +30,40 @@ def chunk_review(
     return chunks
 
 
+def _build_keywords_text(metadata: TmdbMovieMetadata) -> str:
+    """Return the keywords-recipe embed text (factored for reuse by themes recipe)."""
+    genres = ", ".join(metadata.genres)
+    cast = ", ".join(metadata.cast[:5])  # top 5
+    text = (
+        f"{metadata.title} ({metadata.year}). "
+        f"Genres: {genres}. "
+        f"Director: {metadata.director}. "
+        f"Cast: {cast}. "
+        f"{metadata.tagline}. "
+        f"{metadata.overview}"
+    )
+    if metadata.keywords:
+        # TMDB keywords name themes/motifs the overview rarely states — the lever
+        # the pre-spike identified for thematic queries.
+        text += f" Keywords: {', '.join(metadata.keywords)}."
+    return text
+
+
 def build_movie_embed_text(
     metadata: TmdbMovieMetadata, *, recipe: str = "base"
 ) -> str:
+    if recipe == "themes":
+        # themes = full keywords-recipe text + appended abstract thematic sentences.
+        # Import here (not at module top) to keep chunking.py free of network I/O
+        # and to make the LLM call injectable in tests.
+        from ingestion.theme_extraction import extract_themes
+
+        text = _build_keywords_text(metadata)
+        themes = extract_themes(metadata)
+        if themes:
+            text += f" Themes: {themes}."
+        return text
+
     genres = ", ".join(metadata.genres)
     cast = ", ".join(metadata.cast[:5])  # top 5
     text = (

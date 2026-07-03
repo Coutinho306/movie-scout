@@ -30,6 +30,7 @@ from eval.diagnostic.tiers import (
     TierQuery,
     build_tier_queries,
 )
+from ingestion.config import Settings as IngestionSettings
 from retrieval.client import get_qdrant_client
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,9 @@ logger = logging.getLogger(__name__)
 GOLDEN_CACHE = Path("data/golden_set_corpus_sample.json")
 SUITE_CACHE = Path("data/diagnostic_suite.json")
 
-_MOVIES_COLLECTION = "tmdb_movies"
-_REVIEWS_COLLECTION = "tmdb_reviews"
+# Production defaults — used when no IngestionSettings override is given.
+_PROD_MOVIES_COLLECTION = "tmdb_movies"
+_PROD_REVIEWS_COLLECTION = "tmdb_reviews"
 
 # Percentile cutoffs — must mirror golden_corpus_sample.py exactly
 _POPULAR_PERCENTILE = 0.95
@@ -47,14 +49,14 @@ _MID_HIGH_PERCENTILE = 0.80
 _NICHE_PERCENTILE = 0.30
 
 
-def _fetch_review_covered_ids() -> set[int]:
+def _fetch_review_covered_ids(reviews_collection: str = _PROD_REVIEWS_COLLECTION) -> set[int]:
     """Return distinct tmdb_ids that have at least one review chunk ingested."""
     client = get_qdrant_client()
     covered: set[int] = set()
     offset = None
     while True:
         points, offset = client.scroll(
-            collection_name=_REVIEWS_COLLECTION,
+            collection_name=reviews_collection,
             limit=1000,
             offset=offset,
             with_payload=["tmdb_id"],
@@ -68,14 +70,14 @@ def _fetch_review_covered_ids() -> set[int]:
     return covered
 
 
-def _fetch_all_popularities() -> list[float]:
+def _fetch_all_popularities(movies_collection: str = _PROD_MOVIES_COLLECTION) -> list[float]:
     """Fetch popularity values for all movies to derive percentile cutoffs."""
     client = get_qdrant_client()
     pops: list[float] = []
     offset = None
     while True:
         points, offset = client.scroll(
-            collection_name=_MOVIES_COLLECTION,
+            collection_name=movies_collection,
             limit=1000,
             offset=offset,
             with_payload=["popularity"],
@@ -120,11 +122,14 @@ def _classify_popularity(
     return "mid"
 
 
-def _fetch_target_payload(tmdb_id: int) -> dict | None:
-    """Fetch the full payload for a single target from tmdb_movies."""
+def _fetch_target_payload(
+    tmdb_id: int,
+    movies_collection: str = _PROD_MOVIES_COLLECTION,
+) -> dict | None:
+    """Fetch the full payload for a single target from the movies collection."""
     client = get_qdrant_client()
     results = client.scroll(
-        collection_name=_MOVIES_COLLECTION,
+        collection_name=movies_collection,
         limit=1,
         scroll_filter={"must": [{"key": "tmdb_id", "match": {"value": tmdb_id}}]},
         with_payload=True,
@@ -136,12 +141,34 @@ def _fetch_target_payload(tmdb_id: int) -> dict | None:
     return points[0].payload
 
 
-def build_diagnostic_suite(force: bool = False) -> DiagnosticSuite:
+def build_diagnostic_suite(
+    force: bool = False,
+    ingestion: IngestionSettings | None = None,
+) -> DiagnosticSuite:
     """Build (or load cached) the 120-query DiagnosticSuite.
 
     Re-derives popularity tier and review coverage from live corpus signals so
     the diagnostic labels stay in sync with the golden-set sampler's logic.
+
+    Parameters
+    ----------
+    force:
+        Rebuild even if a cached suite exists.
+    ingestion:
+        Optional ingestion config to use for resolving collection names.
+        When provided, payloads and popularity signals are read from the
+        variant collection (e.g. a ``calib_``-prefixed themes collection)
+        instead of the hardcoded production defaults.  Review coverage is
+        still derived from the production ``tmdb_reviews`` collection, as
+        the calibration sample re-ingests movies only.  When ``None``, the
+        production collections are used (preserving existing behaviour).
     """
+    movies_collection = (
+        ingestion.movies_collection if ingestion is not None else _PROD_MOVIES_COLLECTION
+    )
+    # Review coverage always from production reviews (calibration re-ingests movies only).
+    reviews_collection = _PROD_REVIEWS_COLLECTION
+
     if not force and SUITE_CACHE.exists():
         logger.info("Loading diagnostic suite from cache: %s", SUITE_CACHE)
         data = json.loads(SUITE_CACHE.read_text())
@@ -156,8 +183,14 @@ def build_diagnostic_suite(force: bool = False) -> DiagnosticSuite:
     golden = GoldenSet.model_validate(json.loads(GOLDEN_CACHE.read_text()))
     logger.info('{"step":"golden_loaded","queries":%d}', len(golden.queries))
 
+    logger.info(
+        '{"step":"collections","movies":"%s","reviews":"%s"}',
+        movies_collection,
+        reviews_collection,
+    )
+
     # Derive corpus-wide popularity percentile cutoffs
-    popularities = _fetch_all_popularities()
+    popularities = _fetch_all_popularities(movies_collection)
     hi_cut, mid_lo_cut, mid_hi_cut, lo_cut = _derive_cutoffs(popularities)
     logger.info(
         '{"step":"cutoffs","hi":%.2f,"mid_lo":%.2f,"mid_hi":%.2f,"lo":%.2f}',
@@ -165,7 +198,7 @@ def build_diagnostic_suite(force: bool = False) -> DiagnosticSuite:
     )
 
     # Collect tmdb_ids with review coverage
-    review_covered = _fetch_review_covered_ids()
+    review_covered = _fetch_review_covered_ids(reviews_collection)
 
     all_queries: list[TierQuery] = []
 
@@ -174,7 +207,7 @@ def build_diagnostic_suite(force: bool = False) -> DiagnosticSuite:
         tmdb_id = next(iter(gq.target_tmdb_ids))
         tier3_text = gq.text
 
-        payload = _fetch_target_payload(tmdb_id)
+        payload = _fetch_target_payload(tmdb_id, movies_collection)
         if payload is None:
             logger.warning(
                 '{"step":"missing_payload","tmdb_id":%d,"title":"%s"}',
@@ -234,6 +267,18 @@ if __name__ == "__main__":
         description="Build the 120-query diagnostic suite from the corpus golden set"
     )
     parser.add_argument("--force", action="store_true", help="rebuild even if cached")
+    parser.add_argument(
+        "--variant",
+        default=None,
+        help=(
+            "Ingestion variant suffix to read payloads from "
+            "(e.g. 'calib_3small_c300o50_themes'). "
+            "Defaults to production collections when omitted."
+        ),
+    )
     args = parser.parse_args()
-    suite = build_diagnostic_suite(force=args.force)
+    ingestion_cfg: IngestionSettings | None = None
+    if args.variant:
+        ingestion_cfg = IngestionSettings.from_variant_suffix(args.variant)
+    suite = build_diagnostic_suite(force=args.force, ingestion=ingestion_cfg)
     print(f"Suite ready: {len(suite.queries)} queries across {len(suite.queries)//4} films")

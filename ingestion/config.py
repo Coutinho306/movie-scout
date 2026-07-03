@@ -26,9 +26,10 @@ class Settings(BaseSettings):
     embedder: Literal["openai-3-small", "openai-3-large", "minilm", "bge-small"] = "openai-3-small"
     chunk_max_tokens: int = _DEFAULT_CHUNK_MAX
     chunk_overlap_tokens: int = _DEFAULT_CHUNK_OVERLAP
-    # What text we embed per movie: "base" (title/genres/cast/tagline/overview) or
-    # "keywords" (base + TMDB keywords). The pre-spike found this is the real lever.
-    embed_text_recipe: Literal["base", "keywords"] = _DEFAULT_RECIPE
+    # What text we embed per movie: "base" (title/genres/cast/tagline/overview),
+    # "keywords" (base + TMDB keywords), or "themes" (keywords + LLM abstract sentences).
+    # The pre-spike found keywords is the real lever; themes adds abstract register.
+    embed_text_recipe: Literal["base", "keywords", "themes"] = _DEFAULT_RECIPE
     # Calibration namespace: when True, collections get a "calib_" marker so a
     # sample ingest never maps onto (or clobbers) the production default collections.
     sample: bool = False
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
             if part.startswith("c") and "o" in part:
                 c_str, o_str = part[1:].split("o", 1)
                 chunk_max, chunk_overlap = int(c_str), int(o_str)
-            elif part in ("base", "keywords"):
+            elif part in ("base", "keywords", "themes"):
                 recipe = part
             else:
                 raise ValueError(f"unrecognized variant token part {part!r} in {suffix!r}")

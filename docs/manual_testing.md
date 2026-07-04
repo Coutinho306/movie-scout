@@ -14,6 +14,9 @@ person talks to the app. This doc tracks that second layer of testing: manual
 | 2 | "a film with the same theme as Glass Onion" | Knives Out — the obvious answer — never appeared; top results were literal word-matches on "Glass" |
 | 3 | "who is the director of Dune?" | Answered with a list of Dune movies instead of naming the director |
 
+![films like Glass Onion — before the fix, Knives Out never appears](screenshots/films%20like%20Glass%20Onion.png)
+![Director of Arrival — factual question answered as a recommendation list](screenshots/Director%20of%20Arrival.png)
+
 **Root causes found:**
 - No self-exclusion when a query names a seed film.
 - The agent had no way to resolve a named film ("Glass Onion") to its catalog
@@ -51,6 +54,12 @@ collisions, response verbosity.
 | 8 | "Where can I watch Project Hail Mary today?" | Returned a plot summary instead of streaming info |
 | 9 | "What is the theme of Obsession? And when was it released?" | Silently answered about the wrong "Obsession" — 4 different films share that exact title in the corpus (1943 / 1976 / 2015 / 2026) |
 
+![Films with Ryan Gosling — before the fix, only a handful of 26 surfaced](screenshots/Films%20with%20Ryan%20Gosling.png)
+![Films with the actor Keanu Reeves — before the fix, only a handful of 58 surfaced](screenshots/Films%20with%20the%20actor%20Keanu%20Reeves.png)
+![Where can I watch Project Hail Mary today — plot summary instead of streaming info](screenshots/Where%20can%20i%20watch%20Project%20Hail%20mary%20today.png)
+![What is the theme of Obsession — silently answered about the wrong film](screenshots/What%20is%20the%20theme%20of%20Obssession%20And%20When%20it%20was%20released.png)
+![Obsession 2026 — pinning the year resolves correctly, no regression](screenshots/Obsession%202026.png)
+
 **Root causes found and fixed:**
 
 - **Cast search used dense semantic similarity, not an exact filter.**
@@ -77,6 +86,16 @@ collisions, response verbosity.
   returned a full paragraph with unrequested plot detail. Tightened the
   answer-synthesis prompt to match response length to question specificity —
   a one-attribute question now gets one sentence.
+
+## Additional spot checks
+
+More manual queries run alongside the rounds above, exercising the same
+seed-film resolution and thematic-search paths on different titles:
+
+![Films like Prestige](screenshots/Films%20like%20prestige.png)
+![Films like Project Hail Mary](screenshots/Films%20like%20project%20hail%20mary.png)
+![Films with the same theme as Dune](screenshots/Films%20with%20the%20same%20theme%20as%20dune.png)
+![Top 5 Dark Mystery films since 2000s](screenshots/Top%205%20Dark%20Mystery%20Films%20since%202000s.png)
 
 ## What manual testing caught that automated eval didn't
 

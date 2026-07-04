@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
@@ -84,20 +85,101 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
     }
 
 
+def _extract_title_from_query(query: str) -> str | None:
+    """Heuristically extract a film title from an inform-intent query.
+
+    Looks for a quoted title first, then strips common question prefixes to
+    isolate a bare title.  Returns None when extraction is uncertain — callers
+    treat that as "no collision lookup needed".
+    """
+    # Quoted title: "What is the theme of 'Obsession'?" -> "Obsession"
+    quoted = re.search(r'["‘’“”](.+?)["‘’“”]', query)
+    if quoted:
+        return quoted.group(1).strip()
+
+    # Strip leading question phrases: "what is the theme of", "tell me about",
+    # "who directed", "when was", "what year was", "where can I watch", etc.
+    stripped = re.sub(
+        r"^\s*(?:what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:theme|plot|story|genre|cast|director|rating|year|overview|about|runtime|tagline|budget|of\s+)?|"
+        r"who\s+(?:directed|starred\s+in|wrote|made|produced)\s+|"
+        r"when\s+(?:was|is|did)\s+(?:the\s+)?(?:film\s+|movie\s+)?|"
+        r"where\s+can\s+i\s+(?:watch|stream|find|see)\s+|"
+        r"tell\s+me\s+about\s+(?:the\s+(?:film\s+|movie\s+))?|"
+        r"(?:the\s+)?(?:film|movie)\s+)",
+        "",
+        query,
+        flags=re.IGNORECASE,
+    ).strip().rstrip("?.!")
+    # Only trust the result when it looks like a title: non-empty and not a
+    # common pronoun / filler word (which indicate we didn't strip enough).
+    if stripped and not re.match(r"^(?:it|that|this|the|a|an)\b", stripped, re.IGNORECASE):
+        return stripped
+    return None
+
+
+def _supplement_collision_hits(
+    rag_hits: list[dict],
+    settings: AgentSettings,
+) -> list[dict]:
+    """For every distinct title in rag_hits, fetch the full exact-title collision
+    set and merge any unseen films into the list.
+
+    This guarantees that when multiple films share a title (e.g. four films named
+    "Obsession") and dense search only surfaced one of them, all of them reach the
+    inform synthesis prompt so inform.md's disambiguation language can fire.
+
+    Returns a new list (original is not mutated).
+    """
+    from retrieval.config import RetrievalSettings
+    from retrieval.movies import find_by_exact_title
+
+    if not rag_hits:
+        return rag_hits
+
+    retrieval_settings = RetrievalSettings()
+    seen_ids: set[int] = {h.get("tmdb_id") for h in rag_hits if h.get("tmdb_id")}
+    checked_titles: set[str] = set()
+    supplemented = list(rag_hits)
+
+    for hit in rag_hits:
+        title: str = hit.get("title", "")
+        if not title or title in checked_titles:
+            continue
+        checked_titles.add(title)
+        try:
+            collision_hits = find_by_exact_title(title, settings=retrieval_settings)
+        except Exception:  # noqa: BLE001 — don't let a lookup error break synthesis
+            continue
+        for ch in collision_hits:
+            if ch.tmdb_id not in seen_ids:
+                supplemented.append(ch.model_dump())
+                seen_ids.add(ch.tmdb_id)
+
+    return supplemented
+
+
 def synthesize_inform_node(state: AgentState, settings: AgentSettings) -> dict:
     """Answer an informational query with prose about one film; sets no recs.
 
     Used when the orchestrator classified ``intent == "inform"``. Grounds the
     answer on the film's TMDB ``overview`` (carried in ``rag_hits``) plus any web
     hits, and returns plain text — never a recommendation list.
+
+    Before synthesis, ``_supplement_collision_hits`` extends ``rag_hits`` with
+    any films sharing an exact title with already-found hits, so that
+    inform.md's disambiguation language ("there are N films called X — did you
+    mean the {{year}} one?") can fire when multiple films carry the same title.
     """
     cfg = settings
     llm = ChatOpenAI(model=cfg.model_agent, temperature=cfg.temperature)
 
+    # Supplement rag_hits with the full exact-title collision set before synthesis.
+    rag_hits = _supplement_collision_hits(state.get("rag_hits", []), settings)
+
     template = load_prompt("inform")
     prompt = template.format(
         user_query=state["user_query"],
-        rag_hits=json.dumps(state.get("rag_hits", []), ensure_ascii=False),
+        rag_hits=json.dumps(rag_hits, ensure_ascii=False),
         web_hits=json.dumps(state.get("web_hits", []), ensure_ascii=False),
     )
     response = llm.invoke(prompt)

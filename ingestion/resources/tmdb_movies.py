@@ -31,9 +31,9 @@ def tmdb_get(
     *,
     api_key: str,
     params: dict | None = None,
-    timeout: int = 10,
+    timeout: int = 20,
 ) -> requests.Response:
-    """GET a TMDB URL with automatic retry on 429/5xx.
+    """GET a TMDB URL with automatic retry on 429/5xx and read timeouts.
 
     Respects the ``Retry-After`` response header when present.
     Raises ``requests.HTTPError`` for non-retryable 4xx errors and for
@@ -43,7 +43,21 @@ def tmdb_get(
     headers = {"Authorization": f"Bearer {api_key}"}
     attempt = 0
     while True:
-        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            attempt += 1
+            if attempt > _MAX_RETRIES:
+                raise
+            wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+            _logger.warning(
+                '{"step":"tmdb_retry","status":"%s","attempt":%d,"wait_s":%.1f}',
+                type(exc).__name__,
+                attempt,
+                wait,
+            )
+            time.sleep(wait)
+            continue
         if resp.status_code in (429, 500, 502, 503, 504):
             attempt += 1
             if attempt > _MAX_RETRIES:
@@ -115,7 +129,7 @@ def fetch_movie_metadata(
     data = resp.json()
 
     genres = [g["name"] for g in data.get("genres", [])]
-    cast = [c["name"] for c in data.get("credits", {}).get("cast", [])[:5]]
+    cast = [c["name"] for c in data.get("credits", {}).get("cast", [])[:15]]
     director = next(
         (c["name"] for c in data.get("credits", {}).get("crew", []) if c["job"] == "Director"),
         "",
@@ -155,7 +169,7 @@ def load_tmdb_movies(
     explicit_tmdb_ids: list[int] | None = None,
     embed_text_recipe: str = "base",
 ) -> int:
-    client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+    client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=30)
 
     if explicit_tmdb_ids is not None:
         # Calibration sample: ingest exactly this fixed id list, no discovery.

@@ -33,7 +33,7 @@ _logger = logging.getLogger(__name__)
 
 
 def get_qdrant_client(url: str, api_key: str) -> QdrantClient:
-    return QdrantClient(url=url, api_key=api_key)
+    return QdrantClient(url=url, api_key=api_key, timeout=30)
 
 
 def ensure_collections(client: QdrantClient, settings: Settings) -> None:
@@ -51,6 +51,8 @@ def ensure_collections(client: QdrantClient, settings: Settings) -> None:
     client.create_payload_index(movies_col, "year", PayloadSchemaType.INTEGER)
     client.create_payload_index(movies_col, "genres", PayloadSchemaType.KEYWORD)
     client.create_payload_index(movies_col, "vote_average", PayloadSchemaType.FLOAT)
+    client.create_payload_index(movies_col, "cast", PayloadSchemaType.KEYWORD)
+    client.create_payload_index(movies_col, "title", PayloadSchemaType.KEYWORD)
 
     if reviews_col not in existing:
         client.create_collection(

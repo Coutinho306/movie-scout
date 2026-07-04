@@ -49,6 +49,7 @@ markers = [
 [dependency-groups]
 dev = [
     "psycopg2-binary>=2.9.12",
+    "ruff>=0.15.20",
     "testcontainers>=4.14.2",
 ]
 # Streamlit-side only — isolated so Dockerfile.frontend can `uv sync --only-group

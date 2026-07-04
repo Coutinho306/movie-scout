@@ -15,6 +15,7 @@ from qdrant_client.models import (
     NearestQuery,
     Prefetch,
     Range,
+    Record,
     ScoredPoint,
 )
 
@@ -101,6 +102,112 @@ def _point_to_hit(point: ScoredPoint) -> MovieHit:
         score=point.score,
         vector=_extract_vector(point),
     )
+
+
+def _record_to_hit(record: Record) -> MovieHit:
+    """Map a scroll Record (no .score field) to MovieHit with score=0.0."""
+    p = record.payload or {}
+    return MovieHit(
+        tmdb_id=p.get("tmdb_id", 0),
+        title=p.get("title", ""),
+        year=p.get("year", 0),
+        overview=p.get("overview", ""),
+        genres=p.get("genres", []),
+        vote_average=p.get("vote_average", 0.0),
+        score=0.0,
+    )
+
+
+def list_movies_by_cast(
+    actor: str,
+    *,
+    settings: RetrievalSettings,
+    k: int | None = None,
+) -> list[MovieHit]:
+    """Return all movies in the corpus that list ``actor`` in their cast payload.
+
+    Uses Qdrant scroll with an exact cast MatchAny filter — exhaustive listing,
+    no query vector, no semantic search. Results are unranked (score=0.0).
+
+    ``k`` caps the returned list; when None, settings.top_k is used.
+    """
+    collection = settings.ingestion().movies_collection
+    limit = k if k is not None else settings.top_k
+    client = get_qdrant_client()
+
+    cast_filter = Filter(
+        must=[
+            FieldCondition(
+                key="cast",
+                match=MatchAny(any=[actor]),
+            )
+        ]
+    )
+
+    hits: list[MovieHit] = []
+    next_offset = None
+    page_size = 100  # scroll page size
+
+    while len(hits) < limit:
+        batch_limit = min(page_size, limit - len(hits))
+        records, next_offset = client.scroll(
+            collection_name=collection,
+            scroll_filter=cast_filter,
+            limit=batch_limit,
+            offset=next_offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        hits.extend(_record_to_hit(r) for r in records)
+        if next_offset is None:
+            break  # no more pages
+
+    return hits[:limit]
+
+
+def find_by_exact_title(
+    title: str,
+    *,
+    settings: RetrievalSettings,
+) -> list[MovieHit]:
+    """Return every film in the corpus whose title exactly matches ``title``.
+
+    Uses Qdrant scroll with FieldCondition(key="title", MatchValue) — no
+    embedding, no vector search. Reliably surfaces the full collision set for
+    same-title disambiguation (e.g. four films all titled "Obsession").
+
+    Returns [] if no match; returns the full match set (all pages) if multiple
+    films share the title.
+    """
+    collection = settings.ingestion().movies_collection
+    client = get_qdrant_client()
+
+    title_filter = Filter(
+        must=[
+            FieldCondition(
+                key="title",
+                match=MatchValue(value=title),
+            )
+        ]
+    )
+
+    hits: list[MovieHit] = []
+    next_offset = None
+
+    while True:
+        records, next_offset = client.scroll(
+            collection_name=collection,
+            scroll_filter=title_filter,
+            limit=100,
+            offset=next_offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        hits.extend(_record_to_hit(r) for r in records)
+        if next_offset is None:
+            break
+
+    return hits
 
 
 def search_movies(

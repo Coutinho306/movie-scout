@@ -11,6 +11,7 @@ Also classify the user's intent:
 - "inform" when the query asks *about a specific named film* — this includes:
   - Plot/description questions: "what is X", "tell me about X", "what do you know about X", "plot of X"
   - Attribute questions: "who directed X", "who stars in X", "who is the director of X", "what year did X come out", "when was X released", "how long is X", "what is the runtime of X", "what genre is X"
+  - Availability questions: "where can I watch X", "is X on Netflix", "what streaming service has X", "how can I stream X"
   - Any "who/what/when/how/where" question targeting a specific named film.
 - "recommend" for everything else (suggest films, "something like X", "a film like X", mood/genre requests, "films similar to X"). This is the default.
 
@@ -18,6 +19,8 @@ Few-shot examples:
 - "who directed Dune" → {{"intent": "inform"}}
 - "what year did Inception come out" → {{"intent": "inform"}}
 - "who stars in The Godfather" → {{"intent": "inform"}}
+- "where can I watch Project Hail Mary" → {{"intent": "inform"}}
+- "is Dune on Netflix" → {{"intent": "inform"}}
 - "a film like Dune" → {{"intent": "recommend"}}
 - "something like Inception" → {{"intent": "recommend"}}
 - "sci-fi films from the 90s" → {{"intent": "recommend"}}

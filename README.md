@@ -62,6 +62,19 @@ citation cards, and rate the answer with 👍 / 👎.
 
 See [`frontend/README.md`](frontend/README.md) for env vars and details.
 
+## Testing & evaluation
+
+Beyond the automated retrieval grids (`make eval`), the agent was manually
+tested end-to-end across multiple rounds — real `/ask` queries, reading the
+actual output, root-causing what broke. This caught several agent-logic bugs
+(self-recommendation, missing exact-match search, silent title-collision
+resolution) that a retrieval-only metric can't see. See
+[`docs/manual_testing.md`](docs/manual_testing.md).
+
+Retrieval quality on abstract queries is a known, documented open issue —
+see [`docs/retrieval_quality.md`](docs/retrieval_quality.md) for the root
+cause, what was tried, and why it's reported openly rather than hidden.
+
 ## Ingestion
 
 Run the TMDB ingestion pipeline as a module from the project root (the package

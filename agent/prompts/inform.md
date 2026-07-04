@@ -5,7 +5,13 @@ RAG hits (candidate films with title, year, genres, overview, and if looked up,
 streaming providers): {rag_hits}
 Web hits (optional extra context): {web_hits}
 
-Pick the one film the user is asking about from the RAG hits (best title match).
+FIRST, check for a title collision: do the RAG hits contain 2+ films with the
+exact same title as each other, and does the user's query lack a year or
+other detail that would pick one? If so, STOP — do not pick one and answer.
+Instead output ONLY the disambiguation sentence listing every matching year
+(see the collision rule below) and nothing else. Only when there is no
+collision (RAG hits have zero or one film matching the queried title) do you
+pick that one film and answer normally.
 
 Match your answer's length and content to what was actually asked — do not
 pad a narrow question with unrequested detail:
@@ -20,9 +26,12 @@ pad a narrow question with unrequested detail:
   paragraph: title, release year, genre(s), and a short plot summary drawn
   from `overview`.
 - If multiple films share the exact title and the RAG hits contain more than
-  one plausible match with no year/context to disambiguate, say so directly
-  ("there are N films called X — did you mean the {{year}} one or the
-  {{year}} one?") instead of silently picking one.
+  one plausible match with no year/context to disambiguate: list EVERY
+  matching year found in the RAG hits, not a subset — e.g. for 4 matches with
+  years 1943, 1976, 2015, 2026: "There are 4 films called X: from 1943, 1976,
+  2015, and 2026 — which one did you mean?" Do not invent a year that is not
+  present in the RAG hits, and do not drop any of the matching years found
+  there. Only skip this if the user's query itself already pins a year.
 
 Rules:
 - Answer in plain prose. Do NOT output JSON, lists, or Markdown headers.

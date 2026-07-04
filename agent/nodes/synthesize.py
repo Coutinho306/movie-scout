@@ -89,8 +89,10 @@ def _extract_title_from_query(query: str) -> str | None:
     """Heuristically extract a film title from an inform-intent query.
 
     Looks for a quoted title first, then strips common question prefixes to
-    isolate a bare title.  Returns None when extraction is uncertain — callers
-    treat that as "no collision lookup needed".
+    isolate a bare title. Strips a trailing 4-digit year (e.g. "Obsession
+    2026" -> "Obsession") since exact-title lookup matches the bare title
+    payload field, not "title year". Returns None when extraction is
+    uncertain — callers treat that as "no collision lookup needed".
     """
     # Quoted title: "What is the theme of 'Obsession'?" -> "Obsession"
     quoted = re.search(r'["‘’“”](.+?)["‘’“”]', query)
@@ -100,7 +102,8 @@ def _extract_title_from_query(query: str) -> str | None:
     # Strip leading question phrases: "what is the theme of", "tell me about",
     # "who directed", "when was", "what year was", "where can I watch", etc.
     stripped = re.sub(
-        r"^\s*(?:what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:theme|plot|story|genre|cast|director|rating|year|overview|about|runtime|tagline|budget|of\s+)?|"
+        r"^\s*(?:what\s+(?:is|are|was|were)\s+(?:the\s+)?"
+        r"(?:(?:theme|plot|story|genre|cast|director|rating|year|overview|about|runtime|tagline|budget)\s+of\s+|about\s+)?|"
         r"who\s+(?:directed|starred\s+in|wrote|made|produced)\s+|"
         r"when\s+(?:was|is|did)\s+(?:the\s+)?(?:film\s+|movie\s+)?|"
         r"where\s+can\s+i\s+(?:watch|stream|find|see)\s+|"
@@ -110,6 +113,8 @@ def _extract_title_from_query(query: str) -> str | None:
         query,
         flags=re.IGNORECASE,
     ).strip().rstrip("?.!")
+    # Strip a trailing 4-digit year (the title payload field has no year).
+    stripped = re.sub(r"\s+(?:19|20)\d{2}$", "", stripped).strip()
     # Only trust the result when it looks like a title: non-empty and not a
     # common pronoun / filler word (which indicate we didn't strip enough).
     if stripped and not re.match(r"^(?:it|that|this|the|a|an)\b", stripped, re.IGNORECASE):
@@ -120,29 +125,38 @@ def _extract_title_from_query(query: str) -> str | None:
 def _supplement_collision_hits(
     rag_hits: list[dict],
     settings: AgentSettings,
+    user_query: str = "",
 ) -> list[dict]:
-    """For every distinct title in rag_hits, fetch the full exact-title collision
-    set and merge any unseen films into the list.
+    """Fetch the full exact-title collision set and merge any unseen films in.
 
-    This guarantees that when multiple films share a title (e.g. four films named
-    "Obsession") and dense search only surfaced one of them, all of them reach the
-    inform synthesis prompt so inform.md's disambiguation language can fire.
+    Checks every distinct title already in rag_hits (dense search may have
+    surfaced one of several same-titled films), AND independently tries the
+    title extracted from the user's own query — dense search can miss the
+    named film entirely (non-deterministic LLM tool choice, or the title
+    simply doesn't rank in top-k), in which case rag_hits has nothing to
+    supplement from and the collision would otherwise never be found.
+
+    This guarantees that when multiple films share a title (e.g. four films
+    named "Obsession"), all of them reach the inform synthesis prompt so
+    inform.md's disambiguation language can fire — independent of whether
+    dense search happened to find any of them.
 
     Returns a new list (original is not mutated).
     """
     from retrieval.config import RetrievalSettings
     from retrieval.movies import find_by_exact_title
 
-    if not rag_hits:
-        return rag_hits
-
     retrieval_settings = RetrievalSettings()
     seen_ids: set[int] = {h.get("tmdb_id") for h in rag_hits if h.get("tmdb_id")}
     checked_titles: set[str] = set()
     supplemented = list(rag_hits)
 
-    for hit in rag_hits:
-        title: str = hit.get("title", "")
+    titles_to_check = [h.get("title", "") for h in rag_hits]
+    query_title = _extract_title_from_query(user_query)
+    if query_title:
+        titles_to_check.append(query_title)
+
+    for title in titles_to_check:
         if not title or title in checked_titles:
             continue
         checked_titles.add(title)
@@ -174,7 +188,9 @@ def synthesize_inform_node(state: AgentState, settings: AgentSettings) -> dict:
     llm = ChatOpenAI(model=cfg.model_agent, temperature=cfg.temperature)
 
     # Supplement rag_hits with the full exact-title collision set before synthesis.
-    rag_hits = _supplement_collision_hits(state.get("rag_hits", []), settings)
+    rag_hits = _supplement_collision_hits(
+        state.get("rag_hits", []), settings, user_query=state["user_query"]
+    )
 
     template = load_prompt("inform")
     prompt = template.format(

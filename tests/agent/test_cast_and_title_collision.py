@@ -470,6 +470,29 @@ class TestCollisionHitsReachSynthesis:
         result = _supplement_collision_hits([], settings)
         assert result == []
 
+    def test_supplement_finds_collisions_from_query_when_rag_hits_empty(self) -> None:
+        """Regression: dense search can miss the named film entirely (empty
+        rag_hits), in which case the collision set must still be found from
+        the user's own query text, not silently dropped."""
+        from agent.nodes.synthesize import _supplement_collision_hits
+        from agent.config import AgentSettings
+
+        all_obsessions = [
+            _make_hit(5155, title="Obsession", year=1943),
+            _make_hit(4780, title="Obsession", year=1976),
+            _make_hit(332672, title="Obsession", year=2015),
+            _make_hit(1339713, title="Obsession", year=2026),
+        ]
+
+        settings = AgentSettings()
+        with patch("retrieval.movies.find_by_exact_title", return_value=all_obsessions):
+            result = _supplement_collision_hits(
+                [], settings, user_query="What is the theme of Obsession?"
+            )
+
+        result_ids = {h["tmdb_id"] for h in result}
+        assert result_ids == {5155, 4780, 332672, 1339713}
+
     def test_supplement_tolerates_find_by_exact_title_exception(self) -> None:
         """An exception in find_by_exact_title must not crash synthesis."""
         from agent.nodes.synthesize import _supplement_collision_hits

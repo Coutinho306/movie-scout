@@ -35,7 +35,7 @@ def load_tmdb_reviews(
     chunk_max_tokens: int = 300,
     chunk_overlap_tokens: int = 50,
 ) -> int:
-    client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+    client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=30)
     loaded = 0
 
     for tmdb_id in candidate_tmdb_ids:

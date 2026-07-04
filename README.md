@@ -8,18 +8,21 @@
 
 ## Quickstart (Docker)
 
-The runtime stack — API, UI, Postgres, Grafana — runs from one compose file.
-Qdrant is a managed [Qdrant Cloud](https://cloud.qdrant.io) cluster (set via
-`QDRANT_URL` / `QDRANT_API_KEY` in `.env`), not a local container.
+The runtime stack — Qdrant, API, UI, Postgres, Grafana — runs from one
+compose file. Qdrant runs as a **local container** by default (no external
+account needed); see [Deploy](#deploy) for pointing at Qdrant Cloud instead
+when shipping somewhere other than your own machine.
 
 ```bash
 # 1. configure
 cp .env.example .env        # fill in TMDB_API_KEY, OPENAI_API_KEY, TAVILY_API_KEY
+                            # QDRANT_URL=http://localhost:6333, QDRANT_API_KEY="" (local, keyless)
                             # (LANGCHAIN_API_KEY optional, for traces)
 
 # 2. drop your Letterboxd export under data/letterboxd_export/
 
-# 3. ingest once (~10 min: builds taste profile, loads Qdrant)
+# 3. start Qdrant, then ingest once (~10 min: builds taste profile, loads Qdrant)
+docker compose up -d qdrant
 docker compose --profile ingest run --rm ingest      # or: make ingest
 
 # 4. bring up the runtime stack
@@ -38,8 +41,10 @@ model preloaded), `Dockerfile.frontend` ~780 MB (slim — Streamlit only, no
 agent/torch), `Dockerfile.ingest` ~2.75 GB (one-shot embedding job). The API/ingest
 bulk is CPU PyTorch + transformers for the cross-encoder reranker.
 
-`QDRANT_URL` / `QDRANT_API_KEY` point at your Qdrant Cloud cluster and are
-required (local and deploy alike — see [`docs/deploy.md`](docs/deploy.md)).
+`QDRANT_URL` / `QDRANT_API_KEY` are required either way. Point them at the
+local container (`http://localhost:6333`, empty key) for development, or at a
+managed [Qdrant Cloud](https://cloud.qdrant.io) cluster for deploy — see
+[`docs/deploy.md`](docs/deploy.md).
 
 ## Run the app (without Docker)
 

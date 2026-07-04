@@ -14,7 +14,6 @@ person talks to the app. This doc tracks that second layer of testing: manual
 | 2 | "a film with the same theme as Glass Onion" | Knives Out — the obvious answer — never appeared; top results were literal word-matches on "Glass" |
 | 3 | "who is the director of Dune?" | Answered with a list of Dune movies instead of naming the director |
 
-![films like Glass Onion — before the fix, Knives Out never appears](screenshots/films%20like%20Glass%20Onion.png)
 ![Director of Arrival — factual question answered as a recommendation list](screenshots/Director%20of%20Arrival.png)
 
 **Root causes found:**
@@ -32,6 +31,8 @@ stored vector instead of re-embedding the query text, with the seed always
 excluded from results. Intent classification broadened to cover attribute
 questions. Verified fix: "movies like Glass Onion" now returns Knives Out at
 rank 1, byte-identical across repeat runs.
+
+![films like Glass Onion — after the fix, Knives Out ranks first](screenshots/Films%20like%20Glass%20Onion.png)
 
 ## Round 2 — confirming the fix, scoping what's left
 

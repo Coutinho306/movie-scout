@@ -37,8 +37,10 @@ _NAME = rf"([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)+){_STOP}"
 
 _ACTOR_PATTERNS: list[re.Pattern[str]] = [
     # "films/movies with (the actor) X"
+    # Negative lookahead excludes seed-film phrasings such as "with the same
+    # theme/vibe as" which share the "films? with" prefix.
     re.compile(
-        rf"(?:films?|movies?)\s+with\s+(?:the\s+actor\s+)?{_NAME}",
+        rf"(?:films?|movies?)\s+with\s+(?!the\s+same\b)(?:the\s+actor\s+)?{_NAME}",
         re.IGNORECASE,
     ),
     # "starring X"

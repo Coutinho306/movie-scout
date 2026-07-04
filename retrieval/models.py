@@ -34,5 +34,6 @@ class MovieFilters(BaseModel):
     year_min: int | None = None
     year_max: int | None = None
     genres: list[str] | None = None
+    cast: list[str] | None = None
     vote_min: float | None = None
     exclude_tmdb_ids: set[int] | None = None

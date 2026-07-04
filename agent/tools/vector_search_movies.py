@@ -8,11 +8,12 @@ for the same query across separate runs (see specs/features/
 agent-named-film-resolution/SPEC.md's manual validation notes).
 """
 
+from agent.tools.actor_film import extract_actor_name
 from agent.tools.seed_film import extract_seed_title
 from agent.tools.tmdb_search import search_tmdb
 from retrieval.config import RetrievalSettings
 from retrieval.models import MovieFilters, MovieHit
-from retrieval.movies import recommend_similar, search_movies
+from retrieval.movies import list_movies_by_cast, recommend_similar, search_movies
 
 
 def search_movies_tool(
@@ -22,6 +23,7 @@ def search_movies_tool(
     k: int = 10,
     filters: MovieFilters | None = None,
 ) -> list[MovieHit]:
+    # 1. Try seed-film extraction (highest priority: "films like X" phrasings).
     seed_title = extract_seed_title(query)
     if seed_title:
         seed_tmdb_id = search_tmdb(seed_title)
@@ -31,6 +33,16 @@ def search_movies_tool(
             )
             if hits:
                 return hits
+
+    # 2. Try actor extraction ("films with X", "starring X" phrasings) —
+    #    only reached when no seed-film phrasing was detected above.
+    actor = extract_actor_name(query)
+    if actor:
+        return list_movies_by_cast(
+            actor, settings=settings or RetrievalSettings(), k=k
+        )
+
+    # 3. Fall through to dense semantic search.
     return search_movies(query, settings=settings or RetrievalSettings(), k=k, filters=filters)
 
 

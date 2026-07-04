@@ -58,8 +58,17 @@ def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> lis
 
     @tool
     def tmdb_lookup_providers(tmdb_id: int) -> list[str]:
-        """Look up which streaming services offer a film by tmdb_id (region-specific flatrate providers)."""
-        return get_providers(tmdb_id, region=region)
+        """Look up which streaming services offer a film by tmdb_id (region-specific flatrate providers).
+
+        Writes the result onto the matching entry in the collected hits (as
+        "providers") so it reaches synthesis/inform — call search_movies for
+        this tmdb_id first if it isn't already in the collected hits.
+        """
+        providers = get_providers(tmdb_id, region=region)
+        for d in collected:
+            if d["tmdb_id"] == tmdb_id:
+                d["providers"] = providers
+        return providers
 
     return [search_movies, search_reviews, match_taste, tmdb_lookup_providers]
 

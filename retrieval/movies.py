@@ -30,6 +30,18 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+# Lazy singleton for BM25 sparse embedder — loaded only when hybrid=True is first used.
+_bm25_model: object | None = None
+
+
+def _get_bm25_model() -> object:
+    global _bm25_model
+    if _bm25_model is None:
+        from fastembed import SparseTextEmbedding
+
+        _bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    return _bm25_model
+
 
 def _build_filter(filters: MovieFilters | None) -> Filter | None:
     """Build Qdrant Filter from MovieFilters.
@@ -252,9 +264,7 @@ def search_movies(
             # which the server rejects; FusionQuery wraps it as {"fusion":"rrf"}.
             # Passing a plain string as the sparse query also fails; fastembed
             # produces the SparseVector object the client correctly encodes.
-            from fastembed import SparseTextEmbedding
-
-            _bm25 = SparseTextEmbedding(model_name="Qdrant/bm25")
+            _bm25 = _get_bm25_model()
             _sv = next(iter(_bm25.embed([query])))
             sparse_query_vec = SparseVector(
                 indices=_sv.indices.tolist(), values=_sv.values.tolist()

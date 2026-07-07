@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 
 import requests
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from qdrant_client.models import PointStruct
 
 from ingestion.chunking import build_movie_embed_text
@@ -168,6 +168,7 @@ def load_tmdb_movies(
     genre_ids: list[int] = DISCOVERY_GENRES,
     explicit_tmdb_ids: list[int] | None = None,
     embed_text_recipe: str = "base",
+    sparse: bool = False,
 ) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=30)
 
@@ -191,8 +192,23 @@ def load_tmdb_movies(
 
         # embed_texts is the document path; embed_single is reserved for queries
         # (it may prepend a query instruction, e.g. for bge models).
-        vector = embedder.embed_texts([metadata.embed_text])[0]
+        dense_vector = embedder.embed_texts([metadata.embed_text])[0]
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(tmdb_id)))
+
+        if sparse:
+            # Sample+sparse path: named dense vector ("") + BM25 Document ("text").
+            # The client tokenises the Document locally via fastembed; the server
+            # stores the sparse vector and applies IDF at query time.
+            # First-pass recipe: same keywords text as the dense vector so that
+            # genre/mood/literal terms are indexed in both spaces.
+            vector: dict | list = {
+                "": dense_vector,
+                "text": models.Document(
+                    text=metadata.embed_text, model="Qdrant/bm25"
+                ),
+            }
+        else:
+            vector = dense_vector
 
         client.upsert(
             collection_name=collection_name,

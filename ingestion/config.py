@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Calibration namespace: when True, collections get a "calib_" marker so a
     # sample ingest never maps onto (or clobbers) the production default collections.
     sample: bool = False
+    # When True (sample-only), create a sparse "text" vector alongside the dense
+    # vector and write BM25 Document objects to enable native RRF hybrid search.
+    # Must only be set together with sample=True; production path ignores this.
+    sparse: bool = False
 
     @property
     def embedder_dim(self) -> int:
@@ -54,6 +58,8 @@ class Settings(BaseSettings):
         suffix = f"{token}_c{self.chunk_max_tokens}o{self.chunk_overlap_tokens}"
         if self.embed_text_recipe != _DEFAULT_RECIPE:
             suffix += f"_{self.embed_text_recipe}"
+        if self.sparse:
+            suffix += "_bm25"
         if self.sample:
             suffix = f"calib_{suffix}"
         return suffix
@@ -83,12 +89,15 @@ class Settings(BaseSettings):
         chunk_max = _DEFAULT_CHUNK_MAX
         chunk_overlap = _DEFAULT_CHUNK_OVERLAP
         recipe = _DEFAULT_RECIPE
+        sparse = False
         for part in parts[1:]:
             if part.startswith("c") and "o" in part:
                 c_str, o_str = part[1:].split("o", 1)
                 chunk_max, chunk_overlap = int(c_str), int(o_str)
             elif part in ("base", "keywords", "themes"):
                 recipe = part
+            elif part == "bm25":
+                sparse = True
             else:
                 raise ValueError(f"unrecognized variant token part {part!r} in {suffix!r}")
 
@@ -98,11 +107,13 @@ class Settings(BaseSettings):
             chunk_overlap_tokens=chunk_overlap,
             embed_text_recipe=recipe,  # type: ignore[arg-type]
             sample=sample,
+            sparse=sparse,
         )
 
     def _is_default_variant(self) -> bool:
         return (
             not self.sample
+            and not self.sparse
             and self.embedder == "openai-3-small"
             and self.chunk_max_tokens == _DEFAULT_CHUNK_MAX
             and self.chunk_overlap_tokens == _DEFAULT_CHUNK_OVERLAP

@@ -8,7 +8,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
+from qdrant_client.models import (
+    Distance,
+    Modifier,
+    PayloadSchemaType,
+    SparseVectorParams,
+    VectorParams,
+)
 
 from ingestion.config import Settings
 from ingestion.embedding import Embedder, get_embedder
@@ -43,10 +49,22 @@ def ensure_collections(client: QdrantClient, settings: Settings) -> None:
     reviews_col = settings.reviews_collection
 
     if movies_col not in existing:
-        client.create_collection(
-            collection_name=movies_col,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-        )
+        if settings.sample and settings.sparse:
+            # Sample-only: create a named dense vector ("") plus a BM25 sparse
+            # vector ("text") to enable native RRF hybrid search.  Production
+            # path (non-sample) stays as a single unnamed dense VectorParams.
+            client.create_collection(
+                collection_name=movies_col,
+                vectors_config={"": VectorParams(size=dim, distance=Distance.COSINE)},
+                sparse_vectors_config={
+                    "text": SparseVectorParams(modifier=Modifier.IDF)
+                },
+            )
+        else:
+            client.create_collection(
+                collection_name=movies_col,
+                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            )
     client.create_payload_index(movies_col, "tmdb_id", PayloadSchemaType.KEYWORD)
     client.create_payload_index(movies_col, "year", PayloadSchemaType.INTEGER)
     client.create_payload_index(movies_col, "genres", PayloadSchemaType.KEYWORD)
@@ -160,6 +178,7 @@ def run_pipeline(
             collection_name=settings.movies_collection,
             explicit_tmdb_ids=explicit_tmdb_ids,
             embed_text_recipe=settings.embed_text_recipe,
+            sparse=settings.sparse,
         )
         candidate_ids = list(explicit_tmdb_ids)
         _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))

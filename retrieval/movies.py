@@ -6,6 +6,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
+from qdrant_client.http.models.models import FusionQuery
 from qdrant_client.models import (
     FieldCondition,
     Filter,
@@ -17,6 +18,7 @@ from qdrant_client.models import (
     Range,
     Record,
     ScoredPoint,
+    SparseVector,
 )
 
 from ingestion.embedding import get_embedder
@@ -245,21 +247,34 @@ def search_movies(
 
     if settings.hybrid:
         try:
+            # Build client-side BM25 sparse vector for the query text.
+            # Qdrant-client 1.18.0 serializes Fusion.RRF as the bare string "rrf"
+            # which the server rejects; FusionQuery wraps it as {"fusion":"rrf"}.
+            # Passing a plain string as the sparse query also fails; fastembed
+            # produces the SparseVector object the client correctly encodes.
+            from fastembed import SparseTextEmbedding
+
+            _bm25 = SparseTextEmbedding(model_name="Qdrant/bm25")
+            _sv = next(iter(_bm25.embed([query])))
+            sparse_query_vec = SparseVector(
+                indices=_sv.indices.tolist(), values=_sv.values.tolist()
+            )
+
             results = client.query_points(
                 collection_name=collection,
                 prefetch=[
                     Prefetch(
                         query=query_vec,
-                        using="",  # default dense vector
+                        using="",  # named dense vector
                         limit=limit * 2,
                     ),
                     Prefetch(
-                        query=query,  # sparse text query
+                        query=sparse_query_vec,  # BM25 sparse vector
                         using="text",  # sparse vector field name
                         limit=limit * 2,
                     ),
                 ],
-                query=Fusion.RRF,
+                query=FusionQuery(fusion=Fusion.RRF),
                 limit=limit,
                 query_filter=qdrant_filter,
                 score_threshold=settings.score_threshold,

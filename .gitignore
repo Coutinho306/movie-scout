@@ -32,6 +32,7 @@ node_modules/
 __temp/
 
 # data — keep folders, ignore contents
+data/snapshots/
 data/letterboxd_export/*
 data/taste_profile.json
 data/taste_profile.npy

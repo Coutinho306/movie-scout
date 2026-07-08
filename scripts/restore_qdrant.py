@@ -73,10 +73,10 @@ def restore_collection(
         "?priority=snapshot"
     )
     with snapshot_path.open("rb") as fh:
+        # Qdrant requires multipart/form-data with field name "snapshot"
         resp = client.post(
             url,
-            content=fh,
-            headers={"Content-Type": "application/octet-stream"},
+            files={"snapshot": (snapshot_path.name, fh, "application/octet-stream")},
             timeout=600.0,
         )
 

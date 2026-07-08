@@ -62,8 +62,4 @@ CONFIGS: list[DiagnosticConfig] = [
         rerank=True,
         prefetch_k=50,
     ),
-    DiagnosticConfig(
-        name="hybrid_bm25",
-        settings_kwargs={"hybrid": True, "query_rewrite": False},
-    ),
 ]

@@ -1,4 +1,4 @@
-"""Search tmdb_movies collection: vector, hybrid (BM25+dense), filters."""
+"""Search tmdb_movies collection: dense vector search and filters."""
 
 from __future__ import annotations
 
@@ -6,19 +6,15 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from qdrant_client.http.models.models import FusionQuery
 from qdrant_client.models import (
     FieldCondition,
     Filter,
-    Fusion,
     MatchAny,
     MatchValue,
     NearestQuery,
-    Prefetch,
     Range,
     Record,
     ScoredPoint,
-    SparseVector,
 )
 
 from ingestion.embedding import get_embedder
@@ -29,18 +25,6 @@ if TYPE_CHECKING:
     from retrieval.config import RetrievalSettings
 
 _logger = logging.getLogger(__name__)
-
-# Lazy singleton for BM25 sparse embedder — loaded only when hybrid=True is first used.
-_bm25_model: object | None = None
-
-
-def _get_bm25_model() -> object:
-    global _bm25_model
-    if _bm25_model is None:
-        from fastembed import SparseTextEmbedding
-
-        _bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
-    return _bm25_model
 
 
 def _build_filter(filters: MovieFilters | None) -> Filter | None:
@@ -231,11 +215,7 @@ def search_movies(
     k: int | None = None,
     filters: MovieFilters | None = None,
 ) -> list[MovieHit]:
-    """Search tmdb_movies with vector (or hybrid) retrieval.
-
-    When settings.hybrid=True tries Qdrant native RRF fusion. If the collection
-    lacks a sparse vector field the call falls back to dense-only with a warning.
-    """
+    """Search tmdb_movies with dense vector retrieval."""
     ingestion = settings.ingestion()
     collection = ingestion.movies_collection
     limit = k if k is not None else settings.top_k
@@ -257,65 +237,15 @@ def search_movies(
     client = get_qdrant_client()
     qdrant_filter = _build_filter(filters)
 
-    if settings.hybrid:
-        try:
-            # Build client-side BM25 sparse vector for the query text.
-            # Qdrant-client 1.18.0 serializes Fusion.RRF as the bare string "rrf"
-            # which the server rejects; FusionQuery wraps it as {"fusion":"rrf"}.
-            # Passing a plain string as the sparse query also fails; fastembed
-            # produces the SparseVector object the client correctly encodes.
-            _bm25 = _get_bm25_model()
-            _sv = next(iter(_bm25.embed([query])))
-            sparse_query_vec = SparseVector(
-                indices=_sv.indices.tolist(), values=_sv.values.tolist()
-            )
-
-            results = client.query_points(
-                collection_name=collection,
-                prefetch=[
-                    Prefetch(
-                        query=query_vec,
-                        using="",  # named dense vector
-                        limit=limit * 2,
-                    ),
-                    Prefetch(
-                        query=sparse_query_vec,  # BM25 sparse vector
-                        using="text",  # sparse vector field name
-                        limit=limit * 2,
-                    ),
-                ],
-                query=FusionQuery(fusion=Fusion.RRF),
-                limit=limit,
-                query_filter=qdrant_filter,
-                score_threshold=settings.score_threshold,
-                with_payload=True,
-                with_vectors=True,
-            ).points
-        except Exception as exc:
-            _logger.warning(
-                '{"step":"hybrid_fallback","reason":"%s","collection":"%s"}',
-                str(exc)[:120],
-                collection,
-            )
-            results = client.query_points(
-                collection_name=collection,
-                query=query_vec,
-                limit=limit,
-                query_filter=qdrant_filter,
-                score_threshold=settings.score_threshold,
-                with_payload=True,
-                with_vectors=True,
-            ).points
-    else:
-        results = client.query_points(
-            collection_name=collection,
-            query=query_vec,
-            limit=limit,
-            query_filter=qdrant_filter,
-            score_threshold=settings.score_threshold,
-            with_payload=True,
-            with_vectors=True,
-        ).points
+    results = client.query_points(
+        collection_name=collection,
+        query=query_vec,
+        limit=limit,
+        query_filter=qdrant_filter,
+        score_threshold=settings.score_threshold,
+        with_payload=True,
+        with_vectors=True,
+    ).points
 
     hits = [_point_to_hit(p) for p in results]
 

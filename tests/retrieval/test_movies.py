@@ -50,7 +50,24 @@ def test_search_movies_exclude_ids(settings: RetrievalSettings) -> None:
     assert exclude.isdisjoint(ids)
 
 
-def test_search_movies_hybrid_degrades_gracefully(hybrid_settings: RetrievalSettings) -> None:
-    """Hybrid search falls back to vector when no sparse field; must not raise."""
-    hits = search_movies("action adventure", settings=hybrid_settings, k=5)
-    assert isinstance(hits, list)
+def test_search_movies_hybrid_rrf_fires(hybrid_settings: RetrievalSettings) -> None:
+    """Hybrid RRF path fires and returns results that differ from dense for the
+    same query (proves FusionQuery/Prefetch path is active, not a silent fallback).
+    Uses a genre/mood query that benefits most from BM25 keyword overlap.
+    """
+    query = "a Action, Crime, Thriller film — Be careful who you trust."
+    dense_settings = RetrievalSettings(hybrid=False)
+    dense_hits = search_movies(query, settings=dense_settings, k=10)
+    hybrid_hits = search_movies(query, settings=hybrid_settings, k=10)
+
+    # Both paths must return results from the production collection
+    assert len(dense_hits) > 0, "dense search returned no hits"
+    assert len(hybrid_hits) > 0, "hybrid search returned no hits"
+
+    # Hybrid must not be a byte-identical copy of dense — RRF reranks
+    dense_ids = [h.tmdb_id for h in dense_hits]
+    hybrid_ids = [h.tmdb_id for h in hybrid_hits]
+    assert dense_ids != hybrid_ids, (
+        "hybrid and dense returned identical result order — "
+        "RRF is not firing (possible silent fallback to dense)"
+    )

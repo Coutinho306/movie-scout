@@ -1,11 +1,16 @@
-"""Search tmdb_reviews collection."""
+"""Search tmdb_reviews collection (dense vector only).
+
+``tmdb_reviews`` has no sparse ``text`` field — hybrid RRF is not supported
+here. ``search_reviews`` is unconditionally dense-only. If reviews hybrid is
+ever wanted it requires a separate sparse backfill (see specs/0009).
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
-from qdrant_client.models import FieldCondition, Filter, Fusion, MatchAny, Prefetch, ScoredPoint
+from qdrant_client.models import FieldCondition, Filter, MatchAny, ScoredPoint
 
 from ingestion.embedding import get_embedder
 from retrieval.client import get_qdrant_client
@@ -36,10 +41,9 @@ def search_reviews(
     k: int | None = None,
     tmdb_ids: list[int] | None = None,
 ) -> list[ReviewHit]:
-    """Search tmdb_reviews collection.
+    """Search tmdb_reviews collection with dense vector retrieval.
 
     Pass tmdb_ids to restrict results to specific films.
-    When settings.hybrid=True attempts native RRF; falls back to vector on error.
     """
     ingestion = settings.ingestion()
     collection = ingestion.reviews_collection
@@ -59,40 +63,13 @@ def search_reviews(
             ]
         )
 
-    if settings.hybrid:
-        try:
-            results = client.query_points(
-                collection_name=collection,
-                prefetch=[
-                    Prefetch(query=query_vec, using="", limit=limit * 2),
-                    Prefetch(query=query, using="text", limit=limit * 2),
-                ],
-                query=Fusion.RRF,
-                limit=limit,
-                query_filter=qdrant_filter,
-                score_threshold=settings.score_threshold,
-                with_payload=True,
-            ).points
-        except Exception as exc:
-            _logger.warning(
-                '{"step":"reviews_hybrid_fallback","reason":"%s"}', str(exc)[:120]
-            )
-            results = client.query_points(
-                collection_name=collection,
-                query=query_vec,
-                limit=limit,
-                query_filter=qdrant_filter,
-                score_threshold=settings.score_threshold,
-                with_payload=True,
-            ).points
-    else:
-        results = client.query_points(
-            collection_name=collection,
-            query=query_vec,
-            limit=limit,
-            query_filter=qdrant_filter,
-            score_threshold=settings.score_threshold,
-            with_payload=True,
-        ).points
+    results = client.query_points(
+        collection_name=collection,
+        query=query_vec,
+        limit=limit,
+        query_filter=qdrant_filter,
+        score_threshold=settings.score_threshold,
+        with_payload=True,
+    ).points
 
     return [_point_to_hit(p) for p in results]

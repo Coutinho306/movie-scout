@@ -9,6 +9,7 @@ agent-named-film-resolution/SPEC.md's manual validation notes).
 """
 
 from agent.tools.actor_film import extract_actor_name
+from agent.tools.query_mode import classify_query_mode
 from agent.tools.seed_film import extract_seed_title
 from agent.tools.tmdb_search import search_tmdb
 from retrieval.config import RetrievalSettings
@@ -42,8 +43,19 @@ def search_movies_tool(
             actor, settings=settings or RetrievalSettings(), k=k
         )
 
-    # 3. Fall through to dense semantic search.
-    return search_movies(query, settings=settings or RetrievalSettings(), k=k, filters=filters)
+    # 3. Fall through to vector search with intent-routed hybrid mode.
+    #    When the caller supplied explicit settings, respect them unchanged
+    #    (explicit caller wins — hybrid precedence rule).
+    #    When no settings were passed, build them with hybrid set per the
+    #    deterministic classifier: hybrid for genre/mood/overview queries
+    #    (tiers 1-2), dense for abstract/title queries (tiers 0, 3).
+    if settings is not None:
+        effective_settings = settings
+    else:
+        effective_settings = RetrievalSettings(
+            hybrid=classify_query_mode(query)
+        )
+    return search_movies(query, settings=effective_settings, k=k, filters=filters)
 
 
 def similar_movies_tool(

@@ -8,6 +8,8 @@ Each ``DiagnosticConfig`` describes one retrieval path to evaluate:
 - ``rerank=True``: the runner fetches ``prefetch_k`` results then applies
   ``cross_encode_rerank`` down to ``top_k``.  Do NOT rely on
   ``settings.rerank`` — it is a dead flag in ``search_movies``.
+- ``route_hybrid=True``: per-query hybrid flag is set by
+  ``classify_query_mode(query_text)`` instead of ``settings_kwargs["hybrid"]``.
 
 Adding a new config requires only adding an entry here; no other module changes.
 """
@@ -32,12 +34,26 @@ class DiagnosticConfig:
     rerank: bool = False
     # How many results to fetch before reranking (ignored when rerank=False).
     prefetch_k: int = 50
+    # When True, the runner derives the per-query hybrid flag from
+    # classify_query_mode(query_text) instead of settings_kwargs["hybrid"].
+    # This enables the routed_hybrid config where each query's retrieval mode
+    # is set by the deterministic classifier rather than a fixed flag.
+    route_hybrid: bool = False
 
 
 CONFIGS: list[DiagnosticConfig] = [
     DiagnosticConfig(
         name="baseline_dense",
         settings_kwargs={"hybrid": False, "query_rewrite": False},
+    ),
+    DiagnosticConfig(
+        name="hybrid_bm25",
+        settings_kwargs={"hybrid": True, "query_rewrite": False},
+    ),
+    DiagnosticConfig(
+        name="routed_hybrid",
+        settings_kwargs={"hybrid": False, "query_rewrite": False},
+        route_hybrid=True,
     ),
     DiagnosticConfig(
         name="hyde_blended",
@@ -61,9 +77,5 @@ CONFIGS: list[DiagnosticConfig] = [
         hyde_blend_alpha=0.5,
         rerank=True,
         prefetch_k=50,
-    ),
-    DiagnosticConfig(
-        name="hybrid_bm25",
-        settings_kwargs={"hybrid": True, "query_rewrite": False},
     ),
 ]

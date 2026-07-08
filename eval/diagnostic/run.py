@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from agent.tools.query_mode import classify_query_mode
 from eval.diagnostic.build_suite import build_diagnostic_suite
 from eval.diagnostic.configs import CONFIGS, DiagnosticConfig
 from eval.diagnostic.tiers import DiagnosticSuite, TierQuery
@@ -71,14 +72,27 @@ def _run_query(
     For non-rerank configs we issue one retrieval at k=50 and slice to 10.
     For rerank configs we fetch prefetch_k, rerank, then slice to 10; the
     pre-rerank pool provides the @50 ceiling.
+
+    When ``cfg.route_hybrid=True``, the per-query hybrid flag is derived from
+    ``classify_query_mode(query_text)`` rather than the fixed
+    ``settings_kwargs["hybrid"]``. ``model_copy`` preserves the ingestion
+    override (if any) so a pinned-variant run still targets the right collection.
     """
+    if cfg.route_hybrid:
+        effective_hybrid = classify_query_mode(query_text)
+        effective_settings = settings.model_copy(
+            update={"hybrid": effective_hybrid}
+        )
+    else:
+        effective_settings = settings
+
     if cfg.rerank:
-        pool = search_movies(query_text, settings=settings, k=cfg.prefetch_k)
+        pool = search_movies(query_text, settings=effective_settings, k=cfg.prefetch_k)
         top50_ids = [h.tmdb_id for h in pool[:50]]
         reranked = cross_encode_rerank(query_text, pool)
         top10_ids = [h.tmdb_id for h in reranked[:10]]
     else:
-        hits50 = search_movies(query_text, settings=settings, k=50)
+        hits50 = search_movies(query_text, settings=effective_settings, k=50)
         top50_ids = [h.tmdb_id for h in hits50]
         top10_ids = top50_ids[:10]
 
@@ -351,6 +365,43 @@ def _build_summary(
 
 
 # ---------------------------------------------------------------------------
+# Per-tier routing-rate report (AC-4)
+# ---------------------------------------------------------------------------
+
+def routing_rate_report(suite: DiagnosticSuite | None = None) -> str:
+    """Return a formatted per-tier routing-rate report (no network, no retrieval).
+
+    Runs classify_query_mode over every query in the suite and reports the
+    fraction of each tier routed to hybrid. Pure classifier over cached suite
+    text — does not call search_movies or any external service.
+    """
+    if suite is None:
+        suite = build_diagnostic_suite()
+
+    tier_total: dict[int, int] = {t: 0 for t in _TIERS}
+    tier_hybrid: dict[int, int] = {t: 0 for t in _TIERS}
+
+    for tq in suite.queries:
+        tier_total[tq.tier] += 1
+        if classify_query_mode(tq.text):
+            tier_hybrid[tq.tier] += 1
+
+    lines: list[str] = []
+    lines.append("Per-tier hybrid-routing rate (classify_query_mode over suite text)")
+    lines.append("-" * 60)
+    lines.append(f"{'Tier':<20}{'hybrid':>10}{'total':>10}{'rate':>10}")
+    lines.append("-" * 60)
+    for t in _TIERS:
+        h = tier_hybrid[t]
+        total = tier_total[t]
+        rate = h / total if total else 0.0
+        label = f"{t}:{_TIER_LABELS[t]}"
+        lines.append(f"{label:<20}{h:>10}{total:>10}{rate:>9.1%}")
+    lines.append("-" * 60)
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
 
@@ -511,8 +562,21 @@ if __name__ == "__main__":
             "Defaults to production collections when omitted."
         ),
     )
+    parser.add_argument(
+        "--routing-report",
+        action="store_true",
+        default=False,
+        help=(
+            "Print the per-tier hybrid-routing rate from classify_query_mode "
+            "over the 120-query suite text, then exit. No retrieval, no network."
+        ),
+    )
     cli_args = parser.parse_args()
-    ingestion_cfg: IngestionSettings | None = None
-    if cli_args.variant:
-        ingestion_cfg = IngestionSettings.from_variant_suffix(cli_args.variant)
-    run(ingestion=ingestion_cfg)
+
+    if cli_args.routing_report:
+        print(routing_rate_report())
+    else:
+        ingestion_cfg: IngestionSettings | None = None
+        if cli_args.variant:
+            ingestion_cfg = IngestionSettings.from_variant_suffix(cli_args.variant)
+        run(ingestion=ingestion_cfg)

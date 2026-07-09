@@ -140,6 +140,10 @@ ship 3-small + keywords) is documented in
 [`eval/runs/calibration_report.md`](eval/runs/calibration_report.md); the
 decision is also logged in [`DECISIONS.md`](DECISIONS.md).
 
+Hybrid (dense + BM25) search evaluation — sparse-index enrichment,
+before/after nDCG@10 by query-difficulty tier — is documented in
+[`eval/runs/hybrid_search_eval.md`](eval/runs/hybrid_search_eval.md).
+
 ### Step 1 — run retrieval grid
 
 ```bash

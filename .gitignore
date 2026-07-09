@@ -52,6 +52,9 @@ eval/runs/*
 !eval/runs/retrieval_20260702T051634.csv
 !eval/runs/retrieval_20260702T163858.csv
 
+# hybrid search eval — BM25 sparse enrichment writeup
+!eval/runs/hybrid_search_eval.md
+
 # planning (local only)
 specs/
 

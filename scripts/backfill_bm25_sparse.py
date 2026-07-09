@@ -1,12 +1,27 @@
 """Backfill BM25 sparse vectors onto every point in the ``tmdb_movies`` collection.
 
-Sparse text source: ``overview + tagline`` from the existing payload.
-No OpenAI calls, no dense re-embedding — ``update_vectors`` is used so the
-dense vector is structurally untouchable.
+Sparse text recipe: ``enriched-base`` — title, year, genres, director, cast (top-5),
+tagline, overview.  Matches the dense ``base`` recipe minus keywords.  Built via
+``ingestion.chunking.build_sparse_text`` (the shared drift-guard builder).
+
+No OpenAI calls, no dense re-embedding — ``update_vectors`` is used so the dense
+vector is structurally untouchable.
 
 Run via::
 
     uv run python3 -m scripts.backfill_bm25_sparse
+
+Skip predicate (resumability / idempotence):
+    Points already carrying ``sparse_recipe == _SPARSE_TEXT_RECIPE`` in their
+    payload are skipped.  This means:
+    - First run: rewrites all 15,503 points (none carry the tag yet).
+    - Re-run: all points carry the tag → no-op (written == 0).
+
+Tag write:
+    On each successful rewrite, ``set_payload`` writes
+    ``{"sparse_recipe": _SPARSE_TEXT_RECIPE}`` into the point's payload.
+    ``update_vectors`` is called first (sparse vector only — dense untouched),
+    then ``set_payload`` for the tag.
 
 Schema step (``--ensure-sparse-config`` mode):
     The production collection was created with a single unnamed dense vector
@@ -25,14 +40,6 @@ Schema step (``--ensure-sparse-config`` mode):
         6. Verify count, delete tmp.
 
     Dense vectors are never recomputed — zero re-embedding.
-
-Backfill step:
-    Scroll ``tmdb_movies`` in pages of 100, ``with_payload=["overview","tagline"]``,
-    ``with_vectors=False``.  Per point build ``text = f"{overview}. {tagline}".strip()``;
-    if empty skip with ``skipped_empty_text`` count.  Write via ``update_vectors``
-    under the ``text`` name using ``models.Document(text=text, model="Qdrant/bm25")``.
-    Skip predicate (resumability): if the point already has a populated ``text``
-    sparse vector, skip it — a re-run is a no-op once all points are populated.
 """
 
 from __future__ import annotations
@@ -53,6 +60,8 @@ from qdrant_client.models import (
     models,
 )
 
+from ingestion.chunking import build_sparse_text
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 _logger = logging.getLogger(__name__)
@@ -63,8 +72,12 @@ PROGRESS_EVERY = 200
 _PAGE_SIZE = 100
 _DENSE_SIZE = 1536
 
-# Sparse text recipe (explicit, per AC-4)
-_SPARSE_TEXT_RECIPE = "overview + tagline"
+# Enriched sparse text recipe version tag (AC-3).
+# Changing this constant causes a re-run to rewrite all points again.
+_SPARSE_TEXT_RECIPE = "enriched-base"
+
+# Payload fields fetched during enriched-recipe scroll.
+_ENRICHED_PAYLOAD_FIELDS = ["title", "year", "genres", "cast", "director", "tagline", "overview"]
 
 
 # ---------------------------------------------------------------------------
@@ -187,32 +200,18 @@ def ensure_sparse_config(client: QdrantClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Skip predicate
+# Skip predicate — version-tag based (AC-3)
 # ---------------------------------------------------------------------------
 
-def _already_has_sparse(client: QdrantClient, point_id: str | int) -> bool:
-    """Return True if the point already has a populated ``text`` sparse vector."""
-    retrieved = client.retrieve(
-        collection_name=COLLECTION,
-        ids=[point_id],
-        with_payload=False,
-        with_vectors=["text"],
-    )
-    if not retrieved:
-        return False
-    vec = retrieved[0].vector
-    if vec is None:
-        return False
-    if isinstance(vec, dict):
-        text_vec = vec.get("text")
-    else:
-        text_vec = vec
-    if text_vec is None:
-        return False
-    # SparseVector has .indices; if empty the point has no meaningful sparse tokens
-    if hasattr(text_vec, "indices"):
-        return bool(len(text_vec.indices) > 0)
-    return bool(text_vec)
+def _already_tagged_current_recipe(payload: dict) -> bool:
+    """Return True if the point payload carries the current recipe version tag.
+
+    Points without the tag (or with an older tag) are NOT skipped — they will
+    be rewritten with the enriched-base sparse vector and then tagged.
+    On a first run all points lack the tag → all are rewritten.
+    On a re-run all points carry the tag → all are skipped (no-op).
+    """
+    return payload.get("sparse_recipe") == _SPARSE_TEXT_RECIPE
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +219,11 @@ def _already_has_sparse(client: QdrantClient, point_id: str | int) -> bool:
 # ---------------------------------------------------------------------------
 
 def backfill(client: QdrantClient) -> dict[str, int]:
-    """Scroll all points and write BM25 sparse vectors from overview + tagline.
+    """Scroll all points and write enriched-base BM25 sparse vectors.
+
+    Fetches the seven enriched payload fields per point and calls the shared
+    ``build_sparse_text`` builder.  On each successful write, tags the point
+    with ``sparse_recipe == _SPARSE_TEXT_RECIPE`` via ``set_payload``.
 
     Returns a counts dict: written / skipped_populated / skipped_empty_text / failed.
     """
@@ -247,7 +250,7 @@ def backfill(client: QdrantClient) -> dict[str, int]:
             collection_name=COLLECTION,
             limit=_PAGE_SIZE,
             offset=next_offset,
-            with_payload=["overview", "tagline"],
+            with_payload=_ENRICHED_PAYLOAD_FIELDS + ["sparse_recipe"],
             with_vectors=False,
         )
         if not records:
@@ -257,8 +260,8 @@ def backfill(client: QdrantClient) -> dict[str, int]:
             total += 1
             p = record.payload or {}
 
-            # Skip predicate — already has a populated text sparse vector
-            if _already_has_sparse(client, record.id):
+            # Skip predicate — already tagged with the current recipe version
+            if _already_tagged_current_recipe(p):
                 skipped_populated += 1
                 if total % PROGRESS_EVERY == 0:
                     _logger.info(
@@ -267,11 +270,25 @@ def backfill(client: QdrantClient) -> dict[str, int]:
                     )
                 continue
 
-            # Build sparse text from overview + tagline (the stated recipe)
-            overview: str = (p.get("overview") or "").strip()
+            # Build enriched sparse text from shared builder
+            title: str = (p.get("title") or "").strip()
+            year_raw = p.get("year")
+            year: int = int(year_raw) if year_raw is not None else 0
+            genres: list[str] = p.get("genres") or []
+            cast: list[str] = p.get("cast") or []
+            director: str = (p.get("director") or "").strip()
             tagline: str = (p.get("tagline") or "").strip()
-            parts = [overview, tagline]
-            text = ". ".join(p for p in parts if p).strip()
+            overview: str = (p.get("overview") or "").strip()
+
+            text = build_sparse_text(
+                title=title,
+                year=year,
+                genres=genres,
+                director=director,
+                cast=cast,
+                tagline=tagline,
+                overview=overview,
+            ).strip()
 
             if not text:
                 skipped_empty_text += 1
@@ -299,6 +316,13 @@ def backfill(client: QdrantClient) -> dict[str, int]:
                             vector={"text": sparse_vec},
                         )
                     ],
+                )
+                # Tag the point with the current recipe version (AC-3).
+                # set_payload touches payload only — dense vector is untouched.
+                client.set_payload(
+                    collection_name=COLLECTION,
+                    payload={"sparse_recipe": _SPARSE_TEXT_RECIPE},
+                    points=[record.id],
                 )
                 written += 1
             except Exception as exc:  # noqa: BLE001
@@ -382,7 +406,7 @@ def main() -> None:
     )
 
     # P1: capture spot-check baseline before any mutation
-    scratchpad = "/tmp/claude-0/-root-dev-env-movie-scout/92c57dd4-993b-47c8-8c48-05e33ff387b6/scratchpad"
+    scratchpad = "/tmp/claude-0/-root-dev-env-movie-scout/9987b5d8-52d3-43fe-b215-a041ab6bf771/scratchpad"
     baseline_path = f"{scratchpad}/dense_baseline.json"
     if os.path.exists(baseline_path):
         with open(baseline_path) as f:
@@ -417,25 +441,25 @@ def main() -> None:
             '{"step":"spot_check_captured","point_id":"%s"}', str(spot_check_id),
         )
 
-    # P1: ensure sparse schema (recreate fallback)
+    # P1: ensure sparse schema (recreate fallback — no-op if already present)
     ensure_sparse_config(client)
 
-    # P2: run the backfill
+    # P2: run the enriched backfill
     counts = backfill(client)
 
-    # AC-3: verify dense unchanged after backfill
+    # AC-4: verify dense unchanged after backfill
     verify_dense_unchanged(client, spot_check_id, baseline_dense)
 
-    # AC-5: verify point count and spot-check populated sparse
+    # AC-2/AC-4: verify point count unchanged
     info = client.get_collection(COLLECTION)
     assert info.points_count == 15503, f"points_count changed: {info.points_count}"
-    _logger.info('{"step":"ac5_verify","points_count":%d}', info.points_count)
+    _logger.info('{"step":"ac4_verify","points_count":%d}', info.points_count)
 
-    # Inspect the spot-check point's sparse vector
+    # Inspect the spot-check point's sparse vector (AC-5 partial)
     retrieved = client.retrieve(
         collection_name=COLLECTION,
         ids=[spot_check_id],
-        with_payload=False,
+        with_payload=["title", "genres", "cast", "sparse_recipe"],
         with_vectors=["text"],
     )
     if retrieved:
@@ -450,45 +474,11 @@ def main() -> None:
                 len(text_sv.indices),
                 str(text_sv.indices[:5].tolist() if hasattr(text_sv.indices, "tolist") else list(text_sv.indices)[:5]),
             )
-
-    # Verify using="" prefetch resolves (AC-3 open question)
-    from qdrant_client.models import Prefetch
-    from qdrant_client.http.models.models import FusionQuery
-    from qdrant_client.models import Fusion
-
-    records_probe, _ = client.scroll(
-        collection_name=COLLECTION,
-        limit=1,
-        with_payload=False,
-        with_vectors=True,
-    )
-    if records_probe:
-        probe_vec = records_probe[0].vector
-        if isinstance(probe_vec, dict):
-            probe_dense = probe_vec.get("") or next(iter(probe_vec.values()), None)
-        else:
-            probe_dense = probe_vec
-
-        try:
-            test_results = client.query_points(
-                collection_name=COLLECTION,
-                prefetch=[
-                    Prefetch(query=list(probe_dense), using="", limit=5),
-                ],
-                query=FusionQuery(fusion=Fusion.RRF),
-                limit=3,
-                with_payload=False,
-                with_vectors=False,
-            )
-            _logger.info(
-                '{"step":"ac3_using_empty_resolves","result":"ok","n_results":%d}',
-                len(test_results.points),
-            )
-        except Exception as exc:
-            _logger.warning(
-                '{"step":"ac3_using_empty_resolves","result":"FAILED","error":"%s"}',
-                str(exc)[:200],
-            )
+        pay = retrieved[0].payload or {}
+        _logger.info(
+            '{"step":"ac3_recipe_tag","sparse_recipe":"%s"}',
+            pay.get("sparse_recipe", "MISSING"),
+        )
 
     _logger.info(
         '{"step":"all_done","counts":%s}',

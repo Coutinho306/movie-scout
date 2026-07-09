@@ -9,7 +9,7 @@ import requests
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import PointStruct
 
-from ingestion.chunking import build_movie_embed_text
+from ingestion.chunking import build_movie_embed_text, build_sparse_text
 from ingestion.embedding import Embedder
 from ingestion.models import TmdbMovieMetadata
 
@@ -199,12 +199,24 @@ def load_tmdb_movies(
             # Sample+sparse path: named dense vector ("") + BM25 Document ("text").
             # The client tokenises the Document locally via fastembed; the server
             # stores the sparse vector and applies IDF at query time.
-            # First-pass recipe: same keywords text as the dense vector so that
-            # genre/mood/literal terms are indexed in both spaces.
+            # Sparse text is built via the shared build_sparse_text (enriched-base
+            # recipe: title, year, genres, director, cast top-5, tagline, overview;
+            # no keywords clause).  Using the shared builder here and in the
+            # backfill script is the drift guard — both call sites are bound to
+            # the same function so the recipes cannot diverge silently.
+            _sparse_text = build_sparse_text(
+                title=metadata.title,
+                year=metadata.year,
+                genres=metadata.genres,
+                director=metadata.director,
+                cast=metadata.cast,
+                tagline=metadata.tagline,
+                overview=metadata.overview,
+            )
             vector: dict | list = {
                 "": dense_vector,
                 "text": models.Document(
-                    text=metadata.embed_text, model="Qdrant/bm25"
+                    text=_sparse_text, model="Qdrant/bm25"
                 ),
             }
         else:

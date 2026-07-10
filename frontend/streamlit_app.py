@@ -79,18 +79,25 @@ def _render_taste_sidebar() -> None:
                 st.session_state.taste_profile = None
                 st.rerun()
         else:
-            st.caption("Upload your Letterboxd export to personalise results.")
+            st.caption(
+                "Optional — specific queries (\"films like Inception\") work "
+                "without it. Generic ones (\"recommend me a film\") need your "
+                "taste profile to mean anything. Upload your Letterboxd export "
+                "to personalise results toward films you've rated highly."
+            )
+            st.markdown("[Export your Letterboxd data](https://letterboxd.com/user/exportdata/)")
 
         uploaded = st.file_uploader(
             "Letterboxd ratings.csv or ZIP export",
             type=["csv", "zip"],
             help=(
-                "Export your data at letterboxd.com/settings/data. "
-                "Upload ratings.csv or the full ZIP bundle."
+                "Export your data at letterboxd.com/user/exportdata/. "
+                "Upload ratings.csv or the full ZIP bundle. Optional."
             ),
         )
 
-        if uploaded is not None:
+        if uploaded is not None and st.session_state.get("_taste_upload_id") != uploaded.file_id:
+            st.session_state._taste_upload_id = uploaded.file_id
             with st.spinner("Building taste profile… (may take ~1 min)"):
                 try:
                     response = client.upload_taste(

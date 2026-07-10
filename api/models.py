@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from agent.state import RecItem
+from ingestion.models import TasteProfile
 
 
 class AskRequest(BaseModel):
@@ -18,6 +19,17 @@ class AskRequest(BaseModel):
     # query is a cost-amplification vector on a public endpoint.
     query: str = Field(min_length=1, max_length=2000)
     session_id: str | None = None
+    taste_profile: TasteProfile | None = None
+
+
+class TasteProfileResponse(BaseModel):
+    """Response from POST /taste-profile — profile + resolution counts."""
+
+    profile: TasteProfile
+    resolved: int
+    tmdb_miss: int
+    out_of_corpus: int
+    total_input: int
 
 
 class AskResponse(BaseModel):

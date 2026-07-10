@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from typing import Callable
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -33,7 +33,7 @@ from api.dependencies import (
     get_api_settings,
     get_pg_pool,
 )
-from api.models import AskRequest, AskResponse, FeedbackRequest
+from api.models import AskRequest, AskResponse, FeedbackRequest, TasteProfileResponse
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +125,51 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             latency_ms=result.latency_ms,
             cost_usd=result.cost_usd,
             tool_calls=result.tool_calls,
+        )
+
+    @app.post("/taste-profile", response_model=TasteProfileResponse)
+    @limiter.limit("10/minute")
+    async def taste_profile(
+        request: Request,
+        file: UploadFile,
+    ) -> TasteProfileResponse:
+        """Accept a Letterboxd ratings.csv or ZIP export; return an ephemeral TasteProfile.
+
+        Writes nothing to disk or Postgres. Zero OpenAI embedding cost — vectors
+        are pulled from the tmdb_movies corpus by point id.
+        """
+        from retrieval.taste_upload import build_taste_profile_from_upload
+
+        tmdb_api_key = os.environ.get("TMDB_API_KEY", "")
+        if not tmdb_api_key:
+            raise HTTPException(
+                status_code=503, detail="TMDB_API_KEY not configured on server"
+            )
+
+        filename = file.filename or ""
+        data = await file.read()
+
+        try:
+            result = await run_in_threadpool(
+                build_taste_profile_from_upload,
+                data,
+                filename=filename,
+                tmdb_api_key=tmdb_api_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("taste_profile upload failed")
+            raise HTTPException(
+                status_code=500, detail="Taste profile computation failed"
+            ) from exc
+
+        return TasteProfileResponse(
+            profile=result.profile,
+            resolved=result.report.resolved,
+            tmdb_miss=result.report.tmdb_miss,
+            out_of_corpus=result.report.out_of_corpus,
+            total_input=result.report.total_input,
         )
 
     @app.post("/feedback", status_code=204)

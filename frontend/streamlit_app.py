@@ -120,6 +120,56 @@ def _render_taste_sidebar() -> None:
                     st.error(f"Upload failed: {exc}")
 
 
+def _render_clarify_turn(pending_query: str, question: str) -> None:
+    """Render the franchise clarification question + follow-up input.
+
+    On submit, calls client.ask with the pending query and the user's answer,
+    then stores the resulting recommendation in history (AC-9).
+    """
+    st.info(question)
+    with st.form("clarify_form", clear_on_submit=True):
+        answer = st.text_input("Your answer (yes / no)…")
+        submitted = st.form_submit_button("Submit")
+
+    if submitted and answer.strip():
+        sibling_ids: list[int] = st.session_state.get("franchise_sibling_ids", [])
+        with st.spinner("Finding recommendations…"):
+            try:
+                resp = client.ask(
+                    pending_query,
+                    taste_profile=st.session_state.get("taste_profile"),
+                    clarification_answer=answer.strip(),
+                    franchise_sibling_ids=sibling_ids or None,
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Backend error: {exc}")
+                resp = None
+
+        if resp is not None:
+            # Clear the pending clarify state
+            st.session_state.pop("pending_query", None)
+            st.session_state.pop("franchise_sibling_ids", None)
+
+            if resp.get("needs_clarification"):
+                # Extremely unlikely (single-turn cap), but handle gracefully
+                st.warning("Still waiting for clarification — please answer yes or no.")
+            else:
+                st.session_state.history.append(
+                    {
+                        "run_id": resp["run_id"],
+                        "query": pending_query,
+                        "answer": resp["final_answer"],
+                        "citations": resp.get("citations", []),
+                        "metrics": {
+                            "latency_ms": resp.get("latency_ms", 0),
+                            "cost_usd": resp.get("cost_usd", 0),
+                            "tool_calls": resp.get("tool_calls", 0),
+                        },
+                    }
+                )
+                st.rerun()
+
+
 def main() -> None:
     st.title("Movie Scout")
 
@@ -137,34 +187,56 @@ def main() -> None:
             f"Use the sidebar to clear or update."
         )
 
-    with st.form("ask_form", clear_on_submit=True):
-        query = st.text_input("Describe what you want to watch…")
-        submitted = st.form_submit_button("Ask")
+    # If a franchise clarify turn is pending, render the question form instead
+    # of the normal ask form — the user must answer before getting recommendations.
+    pending_query: str | None = st.session_state.get("pending_query")
+    if pending_query is not None:
+        pending_question: str = st.session_state.get(
+            "pending_clarify_question", "Do you want franchise sequels included? (yes / no)"
+        )
+        _render_clarify_turn(pending_query, pending_question)
+    else:
+        with st.form("ask_form", clear_on_submit=True):
+            query = st.text_input("Describe what you want to watch…")
+            submitted = st.form_submit_button("Ask")
 
-    if submitted and query.strip():
-        with st.spinner("Thinking…"):
-            try:
-                resp = client.ask(
-                    query,
-                    taste_profile=st.session_state.get("taste_profile"),
-                )
-            except Exception as exc:  # noqa: BLE001 — surface, don't crash
-                st.error(f"Backend error: {exc}")
-                resp = None
-        if resp is not None:
-            st.session_state.history.append(
-                {
-                    "run_id": resp["run_id"],
-                    "query": query,
-                    "answer": resp["final_answer"],
-                    "citations": resp.get("citations", []),
-                    "metrics": {
-                        "latency_ms": resp.get("latency_ms", 0),
-                        "cost_usd": resp.get("cost_usd", 0),
-                        "tool_calls": resp.get("tool_calls", 0),
-                    },
-                }
-            )
+        if submitted and query.strip():
+            with st.spinner("Thinking…"):
+                try:
+                    resp = client.ask(
+                        query,
+                        taste_profile=st.session_state.get("taste_profile"),
+                    )
+                except Exception as exc:  # noqa: BLE001 — surface, don't crash
+                    st.error(f"Backend error: {exc}")
+                    resp = None
+            if resp is not None:
+                if resp.get("needs_clarification"):
+                    # Franchise clarify turn: stash pending state and rerun to
+                    # show the clarification form instead of adding to history.
+                    st.session_state.pending_query = query
+                    st.session_state.pending_clarify_question = resp.get(
+                        "clarification_question",
+                        "Do you want franchise sequels included? (yes / no)",
+                    )
+                    st.session_state.franchise_sibling_ids = resp.get(
+                        "franchise_sibling_ids", []
+                    )
+                    st.rerun()
+                else:
+                    st.session_state.history.append(
+                        {
+                            "run_id": resp["run_id"],
+                            "query": query,
+                            "answer": resp["final_answer"],
+                            "citations": resp.get("citations", []),
+                            "metrics": {
+                                "latency_ms": resp.get("latency_ms", 0),
+                                "cost_usd": resp.get("cost_usd", 0),
+                                "tool_calls": resp.get("tool_calls", 0),
+                            },
+                        }
+                    )
 
     # newest first
     for entry in reversed(st.session_state.history):

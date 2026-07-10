@@ -91,10 +91,15 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     ) -> AskResponse:
         run_id = uuid4()
 
-        # Build a per-request copy of settings carrying the caller's taste profile.
+        # Build a per-request copy of settings carrying the caller's taste profile
+        # and any franchise clarification data from the stateless round-trip (AC-4).
         # When no profile is present → cold start (profile=None → retrieval-only).
         per_request_settings = agent_settings.model_copy(
-            update={"taste_profile": req.taste_profile}
+            update={
+                "taste_profile": req.taste_profile,
+                "clarification_answer": req.clarification_answer,
+                "franchise_sibling_ids": list(req.franchise_sibling_ids or []),
+            }
         )
 
         result: AgentRunResult = await run_in_threadpool(
@@ -113,7 +118,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             )
         )
 
-        if pool is not None:
+        # Skip analytics persistence on a clarify-pause (no recs generated yet;
+        # the second /ask with the resolved answer will be the meaningful run).
+        if pool is not None and not result.needs_clarification:
             asyncio.create_task(
                 store.insert_run(
                     pool,
@@ -134,6 +141,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             latency_ms=result.latency_ms,
             cost_usd=result.cost_usd,
             tool_calls=result.tool_calls,
+            needs_clarification=result.needs_clarification,
+            clarification_question=result.clarification_question,
+            franchise_sibling_ids=result.franchise_sibling_ids,
         )
 
     @app.post("/taste-profile", response_model=TasteProfileResponse)

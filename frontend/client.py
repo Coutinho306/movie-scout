@@ -36,16 +36,26 @@ def ask(
     session_id: str | None = None,
     *,
     taste_profile: dict | None = None,
+    clarification_answer: str | None = None,
+    franchise_sibling_ids: list[int] | None = None,
     transport: httpx.BaseTransport | None = None,
 ) -> dict:
     """POST /ask — return the AskResponse-shaped JSON dict. Raises on HTTP error.
 
     ``taste_profile`` is the dict from a prior ``upload_taste`` call (the
     ``profile`` field). When absent, the server uses cold-start (no taste).
+
+    ``clarification_answer`` and ``franchise_sibling_ids`` are set on the
+    second call after a ``needs_clarification=True`` response — they carry the
+    stateless franchise round-trip (AC-4, AC-9).
     """
     body: dict[str, Any] = {"query": query, "session_id": session_id}
     if taste_profile is not None:
         body["taste_profile"] = taste_profile
+    if clarification_answer is not None:
+        body["clarification_answer"] = clarification_answer
+    if franchise_sibling_ids:
+        body["franchise_sibling_ids"] = franchise_sibling_ids
     with _client(transport, timeout=ASK_TIMEOUT) as client:
         resp = client.post("/ask", json=body)
         resp.raise_for_status()

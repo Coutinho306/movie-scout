@@ -29,6 +29,10 @@ class AgentState(TypedDict):
     web_calls: int
     cost_usd: float
     token_count: int
+    # Franchise clarify-turn fields (AC-3)
+    clarification_answer: str | None  # echoed back from the client on the second call
+    franchise_include: bool | None    # tri-state: None=undecided, True=include, False=exclude
+    franchise_exclude_ids: list[int]  # sibling corpus tmdb_ids to drop when exclude=True
 
 
 class WebHit(BaseModel):
@@ -54,3 +58,9 @@ class AgentRunResult(BaseModel):
     orchestrator_turns: int
     rag_calls: int
     web_calls: int
+    # Franchise clarify-turn fields (AC-3)
+    needs_clarification: bool = False
+    clarification_question: str | None = None
+    # Sibling ids returned by the clarify-pause response so the client can
+    # echo them back on the second /ask for the exclude filter (AC-6).
+    franchise_sibling_ids: list[int] = []

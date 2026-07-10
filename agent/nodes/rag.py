@@ -30,17 +30,31 @@ def _build_rag_tools(
     region: str,
     top_k: int = 10,
     taste_profile: "TasteProfile | None" = None,
+    franchise_exclude_ids: list[int] | None = None,
 ) -> list:
     """Build ReAct tools bound to a run-local ``collected`` list for hit capture.
 
     ``taste_profile`` is the per-request profile (or None for cold start).
+    ``franchise_exclude_ids`` is the list of franchise sibling tmdb_ids to
+    exclude from the seed-similarity retrieval path (AC-6). When None or empty,
+    no extra exclusion is applied (today's behaviour).
     """
     from ingestion.models import TasteProfile  # local import avoids circular at module level
+
+    from retrieval.models import MovieFilters  # local import
+
+    # Build the MovieFilters for seed-similarity calls (exclude path).
+    # The include path adds no filter — sequels just aren't excluded from ranking.
+    _seed_filters: MovieFilters | None = (
+        MovieFilters(exclude_tmdb_ids=set(franchise_exclude_ids))
+        if franchise_exclude_ids
+        else None
+    )
 
     @tool
     def search_movies(query: str, k: int = top_k) -> list[dict]:
         """Search the TMDB movie collection by semantic similarity. Returns movie dicts with tmdb_id, title, year, overview, genres."""
-        hits = search_movies_tool(query, k=k)
+        hits = search_movies_tool(query, k=k, filters=_seed_filters)
         # vector is excluded at the model level (MovieHit.vector Field(exclude=True))
         dicts = [h.model_dump() for h in hits]
         seen = {d["tmdb_id"] for d in collected}
@@ -87,7 +101,11 @@ def _build_rag_tools(
     return [search_movies, search_reviews, match_taste, tmdb_lookup_providers]
 
 
-def build_rag_agent(settings: AgentSettings, collected: list[dict]):
+def build_rag_agent(
+    settings: AgentSettings,
+    collected: list[dict],
+    franchise_exclude_ids: list[int] | None = None,
+):
     """Construct a ReAct agent whose tools append hits to ``collected``."""
     llm = ChatOpenAI(model=settings.model_agent, temperature=settings.temperature)
     tools = _build_rag_tools(
@@ -95,6 +113,7 @@ def build_rag_agent(settings: AgentSettings, collected: list[dict]):
         settings.watch_region,
         top_k=settings.top_k,
         taste_profile=settings.taste_profile,
+        franchise_exclude_ids=franchise_exclude_ids,
     )
     return create_react_agent(llm, tools=tools, prompt=load_prompt("rag_system"))
 
@@ -102,7 +121,10 @@ def build_rag_agent(settings: AgentSettings, collected: list[dict]):
 def rag_node(state: AgentState, settings: AgentSettings) -> dict:
     """Run the RAG ReAct agent, merge captured hits into state, track usage."""
     collected: list[dict] = list(state.get("rag_hits", []))
-    agent = build_rag_agent(settings, collected)
+    # Read franchise exclude ids from state (set by the pre-graph gate on the
+    # second /ask call when the user chose to exclude franchise siblings, AC-6).
+    franchise_exclude_ids: list[int] = list(state.get("franchise_exclude_ids") or [])
+    agent = build_rag_agent(settings, collected, franchise_exclude_ids=franchise_exclude_ids or None)
 
     query = state.get("rewritten_query") or state["user_query"]
     result = agent.invoke({"messages": [HumanMessage(content=query)]})

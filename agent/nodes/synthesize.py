@@ -183,18 +183,33 @@ def synthesize_inform_node(state: AgentState, settings: AgentSettings) -> dict:
     answer on the film's TMDB ``overview`` (carried in ``rag_hits``) plus any web
     hits, and returns plain text — never a recommendation list.
 
-    Before synthesis, ``_supplement_collision_hits`` extends ``rag_hits`` with
-    any films sharing an exact title with already-found hits, so that
-    inform.md's disambiguation language ("there are N films called X — did you
-    mean the {{year}} one?") can fire when multiple films carry the same title.
+    When ``resolved_inform_tmdb_id`` is set (a disambiguation second turn, 0013
+    AC-6), it fetches that single film by point id and uses it as the sole
+    rag_hits entry, so the answer is about exactly the resolved film only. The
+    collision supplement path is NOT run in that case — the id is already
+    resolved and no collision can re-fire.
+
+    Otherwise (no resolved id), passes rag_hits through as-is — the
+    collision disambiguation question is now produced deterministically
+    pre-graph (0013 AC-9) so the LLM no longer emits it.
     """
     cfg = settings
     llm = ChatOpenAI(model=cfg.model_agent, temperature=cfg.temperature)
 
-    # Supplement rag_hits with the full exact-title collision set before synthesis.
-    rag_hits = _supplement_collision_hits(
-        state.get("rag_hits", []), settings, user_query=state["user_query"]
-    )
+    resolved_id: int | None = state.get("resolved_inform_tmdb_id")  # type: ignore[assignment]
+
+    if resolved_id is not None:
+        # Disambiguation second turn: fetch the single resolved film.
+        from agent.tools.disambiguation import fetch_film_by_tmdb_id
+        from retrieval.config import RetrievalSettings
+
+        hit = fetch_film_by_tmdb_id(resolved_id, settings=RetrievalSettings())
+        rag_hits = [hit] if hit is not None else state.get("rag_hits", [])
+    else:
+        # Normal path: pass rag_hits through unchanged.
+        # (Collision supplement removed: 0013 pre-graph gate now handles
+        #  disambiguation before the graph runs — AC-9 single source of truth.)
+        rag_hits = state.get("rag_hits", [])
 
     template = load_prompt("inform")
     prompt = template.format(

@@ -33,6 +33,9 @@ class AgentState(TypedDict):
     clarification_answer: str | None  # echoed back from the client on the second call
     franchise_include: bool | None    # tri-state: None=undecided, True=include, False=exclude
     franchise_exclude_ids: list[int]  # sibling corpus tmdb_ids to drop when exclude=True
+    # Disambiguation clarify-turn field (0013-disambiguation-followup-turn, AC-3)
+    # When non-None, synthesize_inform_node answers about this single resolved film only.
+    resolved_inform_tmdb_id: int | None
 
 
 class WebHit(BaseModel):

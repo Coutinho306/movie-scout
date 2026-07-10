@@ -17,14 +17,17 @@ from agent.state import AgentState, RecItem
 logger = logging.getLogger(__name__)
 
 
-def _build_prompt(state: AgentState) -> str:
+def _build_prompt(state: AgentState, settings: AgentSettings) -> str:
     template = load_prompt("synthesize")
     rag_hits = json.dumps(state.get("rag_hits", []), ensure_ascii=False)
     web_hits = json.dumps(state.get("web_hits", []), ensure_ascii=False)
+    profile = settings.taste_profile
+    top_films = ", ".join(profile.top_films) if profile and profile.top_films else "none"
     return template.format(
         rag_hits=rag_hits,
         web_hits=web_hits,
         user_query=state["user_query"],
+        taste_top_films=top_films,
     )
 
 
@@ -54,7 +57,7 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
     llm = ChatOpenAI(**llm_kwargs)
     parser = JsonOutputParser()
 
-    prompt = _build_prompt(state)
+    prompt = _build_prompt(state, settings)
     response = llm.invoke(prompt)
 
     recs: list[RecItem] = []

@@ -186,6 +186,7 @@ def build_taste_profile_from_upload(
     vectors: list[list[float]] = []
     weights: list[float] = []
     genre_weights: dict[str, float] = {}
+    titled_weights: list[tuple[float, str]] = []
     rated_count = 0
     liked_count = 0
 
@@ -207,14 +208,18 @@ def build_taste_profile_from_upload(
         vectors.append(list(vec))
         weights.append(weight)
 
-        # Genres from corpus payload (avoids a second TMDB fetch)
+        # Genres + title from corpus payload (avoids a second TMDB fetch)
         payload_genres: list[str] = []
+        title = ""
         if record.payload:
             raw = record.payload.get("genres", [])
             if isinstance(raw, list):
                 payload_genres = [str(g) for g in raw]
+            title = str(record.payload.get("title", ""))
         for genre in payload_genres:
             genre_weights[genre] = genre_weights.get(genre, 0.0) + weight
+        if title:
+            titled_weights.append((weight, title))
 
         # Approximation: weight=1.0 → rated high; weight=0.7 → liked
         if weight >= 0.8:
@@ -229,6 +234,9 @@ def build_taste_profile_from_upload(
 
     centroid = compute_centroid(vectors, weights)
     top_genre_ids = rank_genre_ids(genre_weights, top_n=top_n_genres)
+    top_films = [
+        title for _, title in sorted(titled_weights, key=lambda t: t[0], reverse=True)[:5]
+    ]
 
     profile = TasteProfile(
         centroid=centroid,
@@ -238,6 +246,7 @@ def build_taste_profile_from_upload(
         top_genre_ids=top_genre_ids,
         genre_weights=genre_weights,
         created_at=datetime.now(timezone.utc).isoformat(),
+        top_films=top_films,
     )
 
     logger.info(

@@ -75,3 +75,4 @@ class TasteProfile(BaseModel):
     top_genre_ids: list[int]
     genre_weights: dict[str, float]
     created_at: str
+    top_films: list[str] = []

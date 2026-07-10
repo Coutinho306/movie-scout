@@ -65,11 +65,70 @@ def _render_entry(entry: dict) -> None:
     st.divider()
 
 
+def _render_taste_sidebar() -> None:
+    """Letterboxd export uploader — stored in session_state, never persisted."""
+    with st.sidebar:
+        st.header("Your Taste Profile")
+
+        profile = st.session_state.get("taste_profile")
+        if profile:
+            st.success(
+                f"Profile active: {profile.get('film_count', '?')} films"
+            )
+            if st.button("Clear profile (cold start)"):
+                st.session_state.taste_profile = None
+                st.rerun()
+        else:
+            st.caption("Upload your Letterboxd export to personalise results.")
+
+        uploaded = st.file_uploader(
+            "Letterboxd ratings.csv or ZIP export",
+            type=["csv", "zip"],
+            help=(
+                "Export your data at letterboxd.com/settings/data. "
+                "Upload ratings.csv or the full ZIP bundle."
+            ),
+        )
+
+        if uploaded is not None:
+            with st.spinner("Building taste profile… (may take ~1 min)"):
+                try:
+                    response = client.upload_taste(
+                        uploaded.getvalue(),
+                        filename=uploaded.name,
+                    )
+                    st.session_state.taste_profile = response["profile"]
+                    resolved = response.get("resolved", 0)
+                    tmdb_miss = response.get("tmdb_miss", 0)
+                    out_of_corpus = response.get("out_of_corpus", 0)
+                    total = response.get("total_input", 0)
+                    st.success(
+                        f"Profile built: {resolved} films resolved, "
+                        f"{tmdb_miss} title misses, "
+                        f"{out_of_corpus} out-of-corpus "
+                        f"(of {total} total)"
+                    )
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Upload failed: {exc}")
+
+
 def main() -> None:
-    st.title("🎬 Movie Scout")
+    st.title("Movie Scout")
+
+    _render_taste_sidebar()
 
     if "history" not in st.session_state:
         st.session_state.history = []
+
+    # Show taste status in main area when active
+    profile = st.session_state.get("taste_profile")
+    if profile:
+        st.info(
+            f"Taste-personalised search active "
+            f"({profile.get('film_count', '?')} films). "
+            f"Use the sidebar to clear or update."
+        )
 
     with st.form("ask_form", clear_on_submit=True):
         query = st.text_input("Describe what you want to watch…")
@@ -78,7 +137,10 @@ def main() -> None:
     if submitted and query.strip():
         with st.spinner("Thinking…"):
             try:
-                resp = client.ask(query)
+                resp = client.ask(
+                    query,
+                    taste_profile=st.session_state.get("taste_profile"),
+                )
             except Exception as exc:  # noqa: BLE001 — surface, don't crash
                 st.error(f"Backend error: {exc}")
                 resp = None

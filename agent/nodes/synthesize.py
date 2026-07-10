@@ -34,14 +34,15 @@ def _build_prompt(state: AgentState, settings: AgentSettings) -> str:
 def _format_answer(recs: list[RecItem]) -> str:
     if not recs:
         return "No recommendation generated."
-    lines: list[str] = []
+    blocks: list[str] = []
     for i, rec in enumerate(recs, start=1):
-        header = f"{i}. {rec.title} ({rec.year}) [tmdb:{rec.tmdb_id}]"
+        header = f"**{i}. {rec.title}** ({rec.year})"
         if rec.provider_hint:
-            header += f" — {rec.provider_hint}"
-        lines.append(header)
-        lines.append(f"   {rec.why_for_you}")
-    return "\n".join(lines)
+            header += f" — _{rec.provider_hint}_"
+        blocks.append(header)
+        blocks.append(rec.why_for_you)
+        blocks.append("")
+    return "\n".join(blocks).rstrip()
 
 
 def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:

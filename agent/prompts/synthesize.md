@@ -11,7 +11,7 @@ Produce a JSON array of 3-5 recommendations:
     "tmdb_id": 12345,
     "title": "Film Title",
     "year": 2001,
-    "why_for_you": "Personal explanation why this fits the user's query",
+    "why_for_you": "One short sentence about the film, then a new line starting with '**Why:** ' and a short direct reason it fits this user",
     "provider_hint": "Netflix BR" or null
   }}
 ]
@@ -20,10 +20,13 @@ Rules:
 - Only recommend films that have tmdb_ids from the RAG hits.
 - Use web hits for richer why_for_you explanations.
 - Rank by relevance to query + taste score.
-- If the user's top-rated films list is not "none", write why_for_you as a short,
-  direct comparison to one of those films when there's a genuine connection
-  (e.g. "Since you liked Project Hail Mary, you'll enjoy this for its similar
-  sense of wonder"). Only make the comparison if it's substantive — don't force
-  a connection that isn't there. If no top film applies or the list is "none",
-  fall back to a plain explanation grounded in the query/plot.
-- Respond ONLY with the JSON array, no markdown wrapper.
+- why_for_you format: one short plain sentence describing the film, then a
+  newline, then "**Why:** " followed by ONE short direct reason — reference a
+  specific film from the user's top-rated list when there's a genuine
+  connection (e.g. "**Why:** Since you liked Project Hail Mary, you'll enjoy
+  its similar sense of wonder"). If no top film applies or the list is "none",
+  give the strongest other reason instead (matches your query, popular in a
+  genre/director you gravitate to, etc). Never leave the Why line generic
+  boilerplate — it must name a concrete reason.
+- Respond ONLY with the JSON array, no markdown wrapper (markdown IS allowed
+  inside string field values like why_for_you).

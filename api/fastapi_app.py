@@ -88,8 +88,15 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         pool=Depends(get_pg_pool),
     ) -> AskResponse:
         run_id = uuid4()
+
+        # Build a per-request copy of settings carrying the caller's taste profile.
+        # When no profile is present → cold start (profile=None → retrieval-only).
+        per_request_settings = agent_settings.model_copy(
+            update={"taste_profile": req.taste_profile}
+        )
+
         result: AgentRunResult = await run_in_threadpool(
-            agent_run, req.query, agent_settings
+            agent_run, req.query, per_request_settings
         )
 
         logger.info(

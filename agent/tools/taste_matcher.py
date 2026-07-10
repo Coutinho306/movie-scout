@@ -1,4 +1,8 @@
-"""Tool: cosine similarity of candidate vs taste centroids loaded from taste_profile.json."""
+"""Tool: cosine similarity of candidate vs taste centroid.
+
+``profile=None`` means cold start — no taste profile uploaded this session.
+In cold-start mode, hits are returned in retrieval order (no re-ranking).
+"""
 
 import logging
 
@@ -15,9 +19,20 @@ def match_taste_tool(
     profile: TasteProfile | None = None,
     alpha: float = 0.5,
 ) -> list[MovieHit]:
-    """Re-rank hits by taste. Uses the real centroid cosine when every hit
-    carries its embedding vector; falls back to retrieval-only order otherwise.
+    """Re-rank hits by taste centroid cosine similarity.
+
+    When ``profile`` is None (cold start — no upload this session), hits are
+    returned in their original retrieval order with no re-ranking. This is the
+    unambiguous cold-start path; it does not rely on alpha arithmetic.
+
+    When ``profile`` is provided and every hit carries its embedding vector,
+    uses the real centroid cosine; otherwise falls back to retrieval order.
     """
+    if profile is None:
+        # Cold start: no profile uploaded — return retrieval order unchanged.
+        logger.debug('{"step":"taste_cold_start","reason":"no profile"}')
+        return list(hits)
+
     if hits and all(h.vector is not None for h in hits):
         vectors = [h.vector for h in hits]  # all non-None per the guard above
         return score_against_taste_with_vectors(

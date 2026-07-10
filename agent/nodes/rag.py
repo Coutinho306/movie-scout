@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
@@ -18,11 +19,23 @@ from agent.tools.tmdb_providers import get_providers
 from agent.tools.vector_search_movies import search_movies_tool
 from agent.tools.vector_search_reviews import search_reviews_tool
 
+if TYPE_CHECKING:
+    from ingestion.models import TasteProfile
+
 logger = logging.getLogger(__name__)
 
 
-def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> list:
-    """Build ReAct tools bound to a run-local ``collected`` list for hit capture."""
+def _build_rag_tools(
+    collected: list[dict],
+    region: str,
+    top_k: int = 10,
+    taste_profile: "TasteProfile | None" = None,
+) -> list:
+    """Build ReAct tools bound to a run-local ``collected`` list for hit capture.
+
+    ``taste_profile`` is the per-request profile (or None for cold start).
+    """
+    from ingestion.models import TasteProfile  # local import avoids circular at module level
 
     @tool
     def search_movies(query: str, k: int = top_k) -> list[dict]:
@@ -49,7 +62,8 @@ def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> lis
         from retrieval.models import MovieHit
 
         subset = [MovieHit(**d) for d in collected if d["tmdb_id"] in set(tmdb_ids)]
-        scored = match_taste_tool(subset)
+        # profile=None → cold start (retrieval order, taste ignored)
+        scored = match_taste_tool(subset, profile=taste_profile)
         scored_by_id = {h.tmdb_id: h.model_dump() for h in scored}
         for d in collected:
             if d["tmdb_id"] in scored_by_id:
@@ -76,7 +90,12 @@ def _build_rag_tools(collected: list[dict], region: str, top_k: int = 10) -> lis
 def build_rag_agent(settings: AgentSettings, collected: list[dict]):
     """Construct a ReAct agent whose tools append hits to ``collected``."""
     llm = ChatOpenAI(model=settings.model_agent, temperature=settings.temperature)
-    tools = _build_rag_tools(collected, settings.watch_region, top_k=settings.top_k)
+    tools = _build_rag_tools(
+        collected,
+        settings.watch_region,
+        top_k=settings.top_k,
+        taste_profile=settings.taste_profile,
+    )
     return create_react_agent(llm, tools=tools, prompt=load_prompt("rag_system"))
 
 

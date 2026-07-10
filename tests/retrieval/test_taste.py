@@ -64,5 +64,6 @@ def test_score_against_taste_with_vectors() -> None:
 
 
 def test_score_against_taste_empty() -> None:
-    result = score_against_taste([])
+    profile = load_taste_profile(Path("data/taste_profile.json"))
+    result = score_against_taste([], profile=profile)
     assert result == []

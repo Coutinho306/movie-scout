@@ -1,4 +1,11 @@
-"""Re-score MovieHits against the user's taste centroid."""
+"""Re-score MovieHits against the user's taste centroid.
+
+Callers must supply the profile explicitly. ``profile=None`` is handled at the
+call site (``match_taste_tool``) as cold start — these functions require a
+non-None profile. The ``_TASTE_PROFILE_PATH`` constant and
+``load_taste_profile`` are retained for the offline script and tests only;
+they are **not** used on the serving path.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +21,7 @@ from retrieval.models import MovieHit
 if TYPE_CHECKING:
     from retrieval.config import RetrievalSettings
 
+# Retained for offline script + tests only. NOT loaded on the serving path.
 _TASTE_PROFILE_PATH = Path("data/taste_profile.json")
 
 
@@ -29,7 +37,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 def score_against_taste(
     hits: list[MovieHit],
     *,
-    profile: TasteProfile | None = None,
+    profile: TasteProfile,
     alpha: float = 0.5,
 ) -> list[MovieHit]:
     """No-vector fallback: rank by retrieval score, taste ignored.
@@ -40,13 +48,11 @@ def score_against_taste(
     retrieval ordering, scaled. When vectors *are* available, callers must use
     :func:`score_against_taste_with_vectors` instead for real taste ranking.
 
-    Loads taste_profile.json when profile=None. Returns hits sorted descending
-    by blended_score.
+    ``profile`` must be supplied by the caller (no implicit file load on the
+    serving path). Returns hits sorted descending by blended_score.
     """
     if not hits:
         return hits
-    if profile is None:
-        profile = load_taste_profile(_TASTE_PROFILE_PATH)
 
     updated: list[MovieHit] = []
     for hit in hits:
@@ -65,16 +71,15 @@ def score_against_taste_with_vectors(
     hits: list[MovieHit],
     vectors: list[list[float]],
     *,
-    profile: TasteProfile | None = None,
+    profile: TasteProfile,
     alpha: float = 0.5,
 ) -> list[MovieHit]:
     """Variant when caller supplies the embedding vectors for each hit.
 
     vectors[i] must correspond to hits[i].
+    ``profile`` must be supplied by the caller (no implicit file load on the
+    serving path).
     """
-    if profile is None:
-        profile = load_taste_profile(_TASTE_PROFILE_PATH)
-
     centroid = profile.centroid
     updated: list[MovieHit] = []
     for hit, vec in zip(hits, vectors, strict=True):

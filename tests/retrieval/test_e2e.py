@@ -6,8 +6,11 @@ uses hybrid=True for movies to exercise the restored RRF path, and
 separately uses default settings for reviews (dense-only).
 """
 
+from pathlib import Path
+
 import pytest
 
+from ingestion.scripts.compute_taste import load_taste_profile
 from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
 from retrieval.rerank import cross_encode_rerank
@@ -36,9 +39,10 @@ def test_full_retrieval_pipeline() -> None:
     review_hits = search_reviews(query, settings=review_settings, k=10)
     assert isinstance(review_hits, list)
 
-    # 4. taste re-scoring (no explicit profile → loads from disk)
+    # 4. taste re-scoring with explicit profile (offline dev profile from disk)
     if movie_hits:
-        taste_hits = score_against_taste(movie_hits)
+        profile = load_taste_profile(Path("data/taste_profile.json"))
+        taste_hits = score_against_taste(movie_hits, profile=profile)
         assert len(taste_hits) == len(movie_hits)
         scores = [h.blended_score for h in taste_hits]
         assert scores == sorted(scores, reverse=True)

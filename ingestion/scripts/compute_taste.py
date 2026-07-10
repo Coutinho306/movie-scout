@@ -31,6 +31,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 _logger = logging.getLogger(__name__)
 
 TMDB_BASE = "https://api.themoviedb.org/3"
+MAX_ZIP_MEMBER_BYTES = 50 * 1024 * 1024  # 50MB uncompressed — zip-bomb guard
 
 
 def parse_letterboxd_pool(
@@ -62,6 +63,12 @@ def parse_letterboxd_pool(
                 # Handle both flat and subdirectory paths in ZIP
                 for n in names:
                     if n == path or n.endswith("/" + path):
+                        info = zf.getinfo(n)
+                        if info.file_size > MAX_ZIP_MEMBER_BYTES:
+                            raise ValueError(
+                                f"ZIP member {n!r} exceeds "
+                                f"{MAX_ZIP_MEMBER_BYTES // (1024 * 1024)}MB uncompressed limit"
+                            )
                         return pd.read_csv(io.BytesIO(zf.read(n)))
                 return None
 

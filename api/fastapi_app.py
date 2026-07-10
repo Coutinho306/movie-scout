@@ -37,6 +37,8 @@ from api.models import AskRequest, AskResponse, FeedbackRequest, TasteProfileRes
 
 logger = logging.getLogger(__name__)
 
+MAX_TASTE_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB — Letterboxd exports are typically <5MB
+
 
 def _client_key(request: Request) -> str:
     """Rate-limit key. Behind a proxy (Railway) the real client IP is the first
@@ -155,6 +157,11 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
 
         filename = file.filename or ""
         data = await file.read()
+        if len(data) > MAX_TASTE_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds {MAX_TASTE_UPLOAD_BYTES // (1024 * 1024)}MB limit",
+            )
 
         try:
             result = await run_in_threadpool(

@@ -1,5 +1,5 @@
 """Unit tests for cast-filter routing, actor extraction, backfill script,
-and same-title collision surfacing into inform synthesis.
+and same-title collision regression.
 
 Covers:
 - extract_actor_name precision/fallback
@@ -7,7 +7,8 @@ Covers:
 - search_movies_tool: actor phrasing dispatches to list_movies_by_cast, not dense search
 - backfill: skip predicate (≥15 cast entries → skip, no TMDB/Qdrant write)
 - backfill: calls set_payload, not upsert or overwrite_payload
-- Bug B: >1 same-titled hit reaches inform synthesis input via _supplement_collision_hits
+- Regression (0013 AC-9): unique-title inform queries still answer normally after
+  _supplement_collision_hits removal; collision disambiguation is pre-graph only.
 """
 
 from __future__ import annotations
@@ -366,189 +367,126 @@ class TestBackfillCastPayload:
 
 
 # ---------------------------------------------------------------------------
-# Bug B: >1 same-titled hit reaches inform synthesis input
+# AC-9 regression: collision path removed from synthesize — pre-graph gate only
 # ---------------------------------------------------------------------------
 
 
-class TestCollisionHitsReachSynthesis:
-    def test_supplement_collision_hits_appends_unseen_same_title_films(self) -> None:
-        """_supplement_collision_hits must add all same-title films not already in rag_hits."""
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
+class TestSuppressedCollisionSynthesisRegression:
+    """Verify that the old _supplement_collision_hits mechanism is gone and that
+    unique-title inform queries still work normally (0013 AC-9).
 
-        # rag_hits has only one "Obsession" film.
-        rag_hits = [
-            {
-                "tmdb_id": 4780,
-                "title": "Obsession",
-                "year": 1976,
-                "overview": "...",
-                "genres": ["Thriller"],
-                "vote_average": 7.0,
-                "score": 0.85,
-            }
-        ]
+    The collision disambiguation question is now produced deterministically
+    pre-graph (agent/main.py::run + build_collision_question); the LLM path
+    no longer emits it.  These tests guard against that regression.
+    """
 
-        # find_by_exact_title returns all 4 "Obsession" films.
-        all_obsessions = [
-            _make_hit(5155, title="Obsession", year=1943),
-            _make_hit(4780, title="Obsession", year=1976),   # already in rag_hits
-            _make_hit(332672, title="Obsession", year=2015),
-            _make_hit(1339713, title="Obsession", year=2026),
-        ]
+    def test_supplement_collision_hits_not_in_synthesize(self) -> None:
+        """_supplement_collision_hits must no longer exist in synthesize (AC-9)."""
+        import agent.nodes.synthesize as syn_module
 
-        settings = AgentSettings()
-        with patch("retrieval.movies.find_by_exact_title", return_value=all_obsessions):
-            result = _supplement_collision_hits(rag_hits, settings)
-
-        result_ids = {h["tmdb_id"] for h in result}
-        assert result_ids == {5155, 4780, 332672, 1339713}, (
-            "All four 'Obsession' films should be in the supplemented list"
+        assert not hasattr(syn_module, "_supplement_collision_hits"), (
+            "_supplement_collision_hits was removed in 0013 (pre-graph gate replaces it)"
         )
-        assert len(result) == 4
 
-    def test_supplement_does_not_duplicate_existing_hits(self) -> None:
-        """Films already in rag_hits must not appear twice after supplementing."""
-        from agent.nodes.synthesize import _supplement_collision_hits
+    def test_synthesize_inform_node_does_not_call_find_by_exact_title(self) -> None:
+        """synthesize_inform_node must not call find_by_exact_title (no supplement path).
+
+        The collision question is now pre-graph; synthesis only answers.
+        """
+        from unittest.mock import patch, MagicMock
+
         from agent.config import AgentSettings
-
-        rag_hits = [
-            {
-                "tmdb_id": 4780,
-                "title": "Obsession",
-                "year": 1976,
-                "overview": "...",
-                "genres": ["Thriller"],
-                "vote_average": 7.0,
-                "score": 0.85,
-            }
-        ]
-        collision = [
-            _make_hit(4780, title="Obsession", year=1976),
-            _make_hit(332672, title="Obsession", year=2015),
-        ]
-
-        settings = AgentSettings()
-        with patch("retrieval.movies.find_by_exact_title", return_value=collision):
-            result = _supplement_collision_hits(rag_hits, settings)
-
-        ids = [h["tmdb_id"] for h in result]
-        assert ids.count(4780) == 1, "tmdb_id 4780 must appear exactly once"
-
-    def test_supplement_returns_original_when_no_collision(self) -> None:
-        """When find_by_exact_title returns only 1 film (no collision), list is unchanged."""
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
+        from agent.nodes.synthesize import synthesize_inform_node
 
         rag_hits = [
             {
                 "tmdb_id": 550,
                 "title": "Fight Club",
                 "year": 1999,
-                "overview": "...",
+                "overview": "A soap salesman fights his alter ego.",
                 "genres": ["Drama"],
                 "vote_average": 8.4,
                 "score": 0.95,
             }
         ]
 
-        settings = AgentSettings()
-        with patch(
-            "retrieval.movies.find_by_exact_title",
-            return_value=[_make_hit(550, title="Fight Club", year=1999)],
-        ):
-            result = _supplement_collision_hits(rag_hits, settings)
+        state = {
+            "user_query": "Tell me about Fight Club",
+            "rag_hits": rag_hits,
+            "web_hits": [],
+            "token_count": 0,
+            "cost_usd": 0.0,
+            "resolved_inform_tmdb_id": None,
+        }
 
-        assert len(result) == 1
-        assert result[0]["tmdb_id"] == 550
+        fake_response = MagicMock()
+        fake_response.content = "Fight Club (1999) is a psychological thriller directed by David Fincher."
+        fake_response.usage_metadata = None
+        fake_response.response_metadata = {}
 
-    def test_supplement_handles_empty_rag_hits(self) -> None:
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
-
-        settings = AgentSettings()
-        result = _supplement_collision_hits([], settings)
-        assert result == []
-
-    def test_supplement_finds_collisions_from_query_when_rag_hits_empty(self) -> None:
-        """Regression: dense search can miss the named film entirely (empty
-        rag_hits), in which case the collision set must still be found from
-        the user's own query text, not silently dropped."""
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
-
-        all_obsessions = [
-            _make_hit(5155, title="Obsession", year=1943),
-            _make_hit(4780, title="Obsession", year=1976),
-            _make_hit(332672, title="Obsession", year=2015),
-            _make_hit(1339713, title="Obsession", year=2026),
-        ]
-
-        settings = AgentSettings()
-        with patch("retrieval.movies.find_by_exact_title", return_value=all_obsessions):
-            result = _supplement_collision_hits(
-                [], settings, user_query="What is the theme of Obsession?"
-            )
-
-        result_ids = {h["tmdb_id"] for h in result}
-        assert result_ids == {5155, 4780, 332672, 1339713}
-
-    def test_supplement_tolerates_find_by_exact_title_exception(self) -> None:
-        """An exception in find_by_exact_title must not crash synthesis."""
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
-
-        rag_hits = [
-            {
-                "tmdb_id": 550,
-                "title": "Fight Club",
-                "year": 1999,
-                "overview": "...",
-                "genres": ["Drama"],
-                "vote_average": 8.4,
-                "score": 0.95,
-            }
-        ]
-
-        settings = AgentSettings()
-        with patch(
-            "retrieval.movies.find_by_exact_title",
-            side_effect=RuntimeError("Qdrant unreachable"),
-        ):
-            result = _supplement_collision_hits(rag_hits, settings)
-
-        # Must return original rag_hits untouched.
-        assert result == rag_hits
-
-    def test_more_than_one_hit_reaches_synthesis_when_collision_exists(self) -> None:
-        """Integration assertion: after supplementing, >1 same-titled hit is present."""
-        from agent.nodes.synthesize import _supplement_collision_hits
-        from agent.config import AgentSettings
-
-        rag_hits = [
-            {
-                "tmdb_id": 4780,
-                "title": "Obsession",
-                "year": 1976,
-                "overview": "...",
-                "genres": ["Thriller"],
-                "vote_average": 7.0,
-                "score": 0.85,
-            }
-        ]
-
-        all_four = [
-            _make_hit(5155, title="Obsession", year=1943),
-            _make_hit(4780, title="Obsession", year=1976),
-            _make_hit(332672, title="Obsession", year=2015),
-            _make_hit(1339713, title="Obsession", year=2026),
-        ]
-
-        settings = AgentSettings()
-        with patch("retrieval.movies.find_by_exact_title", return_value=all_four):
-            result = _supplement_collision_hits(rag_hits, settings)
-
-        same_title_hits = [h for h in result if h.get("title") == "Obsession"]
-        assert len(same_title_hits) > 1, (
-            "More than 1 'Obsession' film must reach synthesis when a collision exists"
+        settings = AgentSettings.model_construct(
+            model_agent="gpt-4o-mini",
+            temperature=0.0,
         )
+
+        with (
+            patch("agent.nodes.synthesize.ChatOpenAI") as mock_llm_cls,
+            patch("retrieval.movies.find_by_exact_title") as mock_scroll,
+        ):
+            mock_llm = MagicMock()
+            mock_llm.invoke.return_value = fake_response
+            mock_llm_cls.return_value = mock_llm
+
+            result = synthesize_inform_node(state, settings)
+
+        # find_by_exact_title must NOT be called (supplement path removed)
+        mock_scroll.assert_not_called()
+        assert result["final_answer"] != ""
+        assert result["recs"] == []
+
+    def test_synthesize_inform_node_unique_title_produces_answer(self) -> None:
+        """A unique-title inform query passes through synthesize_inform_node normally."""
+        from unittest.mock import patch, MagicMock
+
+        from agent.config import AgentSettings
+        from agent.nodes.synthesize import synthesize_inform_node
+
+        state = {
+            "user_query": "Who directed Fight Club?",
+            "rag_hits": [
+                {
+                    "tmdb_id": 550,
+                    "title": "Fight Club",
+                    "year": 1999,
+                    "overview": "A soap salesman fights his alter ego.",
+                    "genres": ["Drama"],
+                    "vote_average": 8.4,
+                    "score": 0.95,
+                }
+            ],
+            "web_hits": [],
+            "token_count": 0,
+            "cost_usd": 0.0,
+            "resolved_inform_tmdb_id": None,
+        }
+
+        expected_answer = "Fight Club was directed by David Fincher."
+        fake_response = MagicMock()
+        fake_response.content = expected_answer
+        fake_response.usage_metadata = None
+        fake_response.response_metadata = {}
+
+        settings = AgentSettings.model_construct(
+            model_agent="gpt-4o-mini",
+            temperature=0.0,
+        )
+
+        with patch("agent.nodes.synthesize.ChatOpenAI") as mock_llm_cls:
+            mock_llm = MagicMock()
+            mock_llm.invoke.return_value = fake_response
+            mock_llm_cls.return_value = mock_llm
+
+            result = synthesize_inform_node(state, settings)
+
+        assert result["final_answer"] == expected_answer
+        assert result["recs"] == []

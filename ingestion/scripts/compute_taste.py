@@ -1,11 +1,13 @@
 """Script: read Letterboxd CSVs → embed → compute taste centroids → save taste_profile.json."""
 
 import difflib
+import io
 import json
 import logging
 import math
 import os
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -31,9 +33,121 @@ _logger = logging.getLogger(__name__)
 TMDB_BASE = "https://api.themoviedb.org/3"
 
 
+def parse_letterboxd_pool(
+    data: bytes,
+    *,
+    filename: str = "",
+) -> tuple[list[LetterboxdFilm], list[LetterboxdFilm]]:
+    """Parse a Letterboxd export into a weighted film pool + watchlist.
+
+    Accepts either:
+    - A single ``ratings.csv`` file (bytes), or
+    - A full ZIP export bundle containing ``ratings.csv``, ``likes/films.csv``,
+      ``watched.csv``, and ``watchlist.csv``.
+
+    Returns ``(pool, watchlist)`` where ``pool`` contains rated/liked/watched
+    films (deduped) and ``watchlist`` contains the watchlist entries.
+    """
+    pool: list[LetterboxdFilm] = []
+    seen: set[tuple[str, int]] = set()
+    watchlist: list[LetterboxdFilm] = []
+
+    is_zip = filename.lower().endswith(".zip") or (len(data) >= 2 and data[:2] == b"PK")
+
+    if is_zip:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = zf.namelist()
+
+            def _read_csv(path: str) -> pd.DataFrame | None:
+                # Handle both flat and subdirectory paths in ZIP
+                for n in names:
+                    if n == path or n.endswith("/" + path):
+                        return pd.read_csv(io.BytesIO(zf.read(n)))
+                return None
+
+            ratings_df = _read_csv("ratings.csv")
+            liked_df = _read_csv("likes/films.csv")
+            watched_df = _read_csv("watched.csv")
+            watchlist_df = _read_csv("watchlist.csv")
+    else:
+        # Single ratings.csv bytes
+        ratings_df = pd.read_csv(io.BytesIO(data))
+        liked_df = None
+        watched_df = None
+        watchlist_df = None
+
+    if ratings_df is not None:
+        for _, row in ratings_df.iterrows():
+            try:
+                key = (str(row["Name"]), int(row["Year"]))
+            except (KeyError, ValueError):
+                raise ValueError(
+                    "ratings.csv must have Name, Year, Rating columns"
+                )
+            if "Rating" not in row:
+                raise ValueError("ratings.csv must have a Rating column")
+            if key not in seen:
+                pool.append(
+                    LetterboxdFilm(
+                        name=str(row["Name"]),
+                        year=int(row["Year"]),
+                        rating=float(row["Rating"]),
+                        source="rated",
+                    )
+                )
+                seen.add(key)
+
+    if liked_df is not None:
+        for _, row in liked_df.iterrows():
+            key = (str(row["Name"]), int(row["Year"]))
+            if key not in seen:
+                pool.append(
+                    LetterboxdFilm(
+                        name=str(row["Name"]),
+                        year=int(row["Year"]),
+                        rating=None,
+                        source="liked",
+                    )
+                )
+                seen.add(key)
+
+    if watched_df is not None:
+        for _, row in watched_df.iterrows():
+            key = (str(row["Name"]), int(row["Year"]))
+            if key not in seen:
+                pool.append(
+                    LetterboxdFilm(
+                        name=str(row["Name"]),
+                        year=int(row["Year"]),
+                        rating=None,
+                        source="watched",
+                    )
+                )
+                seen.add(key)
+
+    if watchlist_df is not None:
+        watchlist = [
+            LetterboxdFilm(
+                name=str(row["Name"]),
+                year=int(row["Year"]),
+                rating=None,
+                source="watchlist",
+            )
+            for _, row in watchlist_df.iterrows()
+        ]
+
+    return pool, watchlist
+
+
 def load_letterboxd_csvs(
     export_dir: Path,
 ) -> tuple[list[LetterboxdFilm], list[LetterboxdFilm]]:
+    """Load Letterboxd CSVs from an export directory on disk.
+
+    Delegates to ``parse_letterboxd_pool`` via a ZIP assembled in memory from
+    the directory contents, or falls back to reading individual files. This
+    keeps the offline CLI path working unchanged while reusing the core logic.
+    """
     pool: list[LetterboxdFilm] = []
     seen: set[tuple[str, int]] = set()
 

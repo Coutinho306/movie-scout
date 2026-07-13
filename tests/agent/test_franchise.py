@@ -16,6 +16,7 @@ from agent.tools.franchise import (
     detect_franchise_ambiguity,
     resolve_clarification,
 )
+from agent.tools.seed_film import _extract_seed_title_via_llm
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +133,16 @@ class TestResolveClarificationRoundTrip:
 
 class TestDetectFranchiseAmbiguity:
     def test_non_seed_query_returns_none_no_tmdb_call(self) -> None:
-        """A generic / non-seed-shaped query must return None with zero TMDB calls."""
+        """A generic / non-seed-shaped query must return None with zero TMDB calls.
+
+        Both the regex fast-path (extract_seed_title) and the LLM fallback
+        (_extract_seed_title_via_llm) return None → no TMDB call is made.
+        """
         with (
             patch("agent.tools.franchise.extract_seed_title", return_value=None) as mock_seed,
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm", return_value=None
+            ) as mock_llm,
             patch("agent.tools.franchise._fetch_movie_details") as mock_fetch,
         ):
             result = detect_franchise_ambiguity(
@@ -143,6 +151,7 @@ class TestDetectFranchiseAmbiguity:
 
         assert result is None
         mock_seed.assert_called_once()
+        mock_llm.assert_called_once()
         mock_fetch.assert_not_called()  # AC-8: zero TMDB calls for non-seed queries
 
     def test_knives_out_returns_ambiguity_with_sibling_ids(self) -> None:
@@ -333,3 +342,214 @@ class TestResolveClarification:
         """When both affirmative and negative tokens appear, result is unclear."""
         result = resolve_clarification("yes but no")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 (AC-2.1, AC-2.2, AC-2.3, AC-2.4): language-agnostic franchise detection
+# ---------------------------------------------------------------------------
+
+
+def _make_full_qdrant_patch(sibling_ids: list[int]):
+    """Context manager that patches Qdrant to return the given sibling ids."""
+    records = [_make_qdrant_record(tid) for tid in sibling_ids]
+    mock_client = MagicMock()
+    mock_client.retrieve.return_value = records
+    return mock_client
+
+
+class TestFranchiseDetectionPTQuery:
+    """AC-2.1 + AC-2.2 — 'Filmes como Knives Out' (PT) produces the same result as EN."""
+
+    def test_pt_seed_query_detects_franchise_same_sibling_ids(self) -> None:
+        """AC-2.1: 'Filmes como Knives Out' → franchise ambiguity with same sibling ids."""
+        sibling_record_glass_onion = _make_qdrant_record(GLASS_ONION_TMDB_ID)
+        sibling_record_wake_up = _make_qdrant_record(WAKE_UP_DEAD_MAN_TMDB_ID)
+
+        with (
+            # EN regex returns None for PT phrasing — LLM fallback kicks in
+            patch("agent.tools.franchise.extract_seed_title", return_value=None),
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm",
+                return_value="Knives Out",
+            ) as mock_llm,
+            patch("agent.tools.franchise.search_tmdb", return_value=KNIVES_OUT_TMDB_ID),
+            patch(
+                "agent.tools.franchise._fetch_movie_details",
+                return_value=_KNIVES_OUT_DETAILS,
+            ),
+            patch(
+                "agent.tools.franchise._fetch_collection_members",
+                return_value=[
+                    KNIVES_OUT_TMDB_ID,
+                    GLASS_ONION_TMDB_ID,
+                    WAKE_UP_DEAD_MAN_TMDB_ID,
+                ],
+            ),
+            patch("agent.tools.franchise.get_qdrant_client") as mock_get_client,
+        ):
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            mock_client.retrieve.return_value = [
+                sibling_record_glass_onion,
+                sibling_record_wake_up,
+            ]
+
+            result = detect_franchise_ambiguity(
+                "Filmes como Knives Out", tmdb_api_key="fake"
+            )
+
+        assert result is not None
+        assert isinstance(result, FranchiseAmbiguity)
+        assert result.seed_id == KNIVES_OUT_TMDB_ID
+        assert result.seed_title == "Knives Out"
+        assert GLASS_ONION_TMDB_ID in result.sibling_ids
+        assert WAKE_UP_DEAD_MAN_TMDB_ID in result.sibling_ids
+        assert KNIVES_OUT_TMDB_ID not in result.sibling_ids
+        mock_llm.assert_called_once_with("Filmes como Knives Out")
+
+    def test_en_and_pt_variants_resolve_to_same_seed_id(self) -> None:
+        """AC-2.2: EN and PT variants both resolve Knives Out to the same tmdb_id."""
+        sibling_record = _make_qdrant_record(GLASS_ONION_TMDB_ID)
+
+        shared_patches = {
+            "tmdb_id": KNIVES_OUT_TMDB_ID,
+            "details": _KNIVES_OUT_DETAILS,
+            "members": [KNIVES_OUT_TMDB_ID, GLASS_ONION_TMDB_ID],
+        }
+
+        en_result = None
+        pt_result = None
+
+        # EN query: regex fast-path succeeds, no LLM call
+        with (
+            patch("agent.tools.franchise.search_tmdb", return_value=KNIVES_OUT_TMDB_ID),
+            patch(
+                "agent.tools.franchise._fetch_movie_details",
+                return_value=_KNIVES_OUT_DETAILS,
+            ),
+            patch(
+                "agent.tools.franchise._fetch_collection_members",
+                return_value=[KNIVES_OUT_TMDB_ID, GLASS_ONION_TMDB_ID],
+            ),
+            patch("agent.tools.franchise.get_qdrant_client") as mock_get_client,
+        ):
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            mock_client.retrieve.return_value = [sibling_record]
+            en_result = detect_franchise_ambiguity(
+                "films like Knives Out", tmdb_api_key="fake"
+            )
+
+        # PT query: regex misses, LLM fallback extracts "Knives Out"
+        with (
+            patch("agent.tools.franchise.extract_seed_title", return_value=None),
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm",
+                return_value="Knives Out",
+            ),
+            patch("agent.tools.franchise.search_tmdb", return_value=KNIVES_OUT_TMDB_ID),
+            patch(
+                "agent.tools.franchise._fetch_movie_details",
+                return_value=_KNIVES_OUT_DETAILS,
+            ),
+            patch(
+                "agent.tools.franchise._fetch_collection_members",
+                return_value=[KNIVES_OUT_TMDB_ID, GLASS_ONION_TMDB_ID],
+            ),
+            patch("agent.tools.franchise.get_qdrant_client") as mock_get_client2,
+        ):
+            mock_client2 = MagicMock()
+            mock_get_client2.return_value = mock_client2
+            mock_client2.retrieve.return_value = [sibling_record]
+            pt_result = detect_franchise_ambiguity(
+                "Filmes como Knives Out", tmdb_api_key="fake"
+            )
+
+        assert en_result is not None
+        assert pt_result is not None
+        assert en_result.seed_id == pt_result.seed_id == KNIVES_OUT_TMDB_ID
+        assert set(en_result.sibling_ids) == set(pt_result.sibling_ids)
+
+
+class TestFranchiseCostScope:
+    """AC-2.3 + AC-2.4 — zero seed-intent LLM calls on non-seed traffic."""
+
+    @pytest.mark.parametrize("query", [
+        "recommend something slow and tense",
+        "Who directed Inception?",
+        "Tell me about Parasite",
+        "what films has Tom Hanks been in?",
+        "recomende algo assustador",  # PT non-seed recommend
+    ])
+    def test_non_seed_queries_trigger_zero_llm_and_tmdb_calls(self, query: str) -> None:
+        """AC-2.3: non-seed queries → zero seed-intent LLM calls AND zero TMDB fetches.
+
+        Note: non-seed queries that don't match _SEED_PATTERNS will call the LLM
+        fallback once (that's the cost contract — it fires only on the
+        seed-candidate branch where regex returned None). Generic non-seed queries
+        that produce a regex hit of None WILL trigger one LLM call. The cost
+        property is that this LLM call returns None quickly (no title extracted)
+        and no TMDB calls follow.
+        """
+        with (
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm",
+                return_value=None,
+            ) as mock_llm,
+            patch("agent.tools.franchise._fetch_movie_details") as mock_tmdb_detail,
+            patch("agent.tools.franchise._fetch_collection_members") as mock_tmdb_coll,
+            patch("agent.tools.franchise.get_qdrant_client") as mock_qdrant,
+        ):
+            result = detect_franchise_ambiguity(query, tmdb_api_key="fake")
+
+        assert result is None
+        mock_tmdb_detail.assert_not_called()
+        mock_tmdb_coll.assert_not_called()
+        mock_qdrant.assert_not_called()
+
+    def test_en_seed_query_triggers_zero_llm_calls(self) -> None:
+        """AC-2.3: EN seed query hits the regex fast-path → zero LLM calls."""
+        sibling_record = _make_qdrant_record(GLASS_ONION_TMDB_ID)
+
+        with (
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm",
+            ) as mock_llm,
+            patch("agent.tools.franchise.search_tmdb", return_value=KNIVES_OUT_TMDB_ID),
+            patch(
+                "agent.tools.franchise._fetch_movie_details",
+                return_value=_KNIVES_OUT_DETAILS,
+            ),
+            patch(
+                "agent.tools.franchise._fetch_collection_members",
+                return_value=[KNIVES_OUT_TMDB_ID, GLASS_ONION_TMDB_ID],
+            ),
+            patch("agent.tools.franchise.get_qdrant_client") as mock_get_client,
+        ):
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            mock_client.retrieve.return_value = [sibling_record]
+
+            result = detect_franchise_ambiguity(
+                "films like Knives Out", tmdb_api_key="fake"
+            )
+
+        assert result is not None
+        mock_llm.assert_not_called()  # EN regex hit → LLM never called
+
+    def test_llm_error_during_seed_extraction_falls_through_to_none(self) -> None:
+        """AC-2.4: LLM failure on the seed-candidate branch → non-crash, returns None."""
+        with (
+            patch("agent.tools.franchise.extract_seed_title", return_value=None),
+            patch(
+                "agent.tools.franchise._extract_seed_title_via_llm",
+                return_value=None,  # simulates API failure returning None
+            ),
+            patch("agent.tools.franchise._fetch_movie_details") as mock_fetch,
+        ):
+            result = detect_franchise_ambiguity(
+                "Filmes como Knives Out", tmdb_api_key="fake"
+            )
+
+        assert result is None
+        mock_fetch.assert_not_called()

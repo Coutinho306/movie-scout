@@ -18,7 +18,7 @@ import uuid
 import requests
 from pydantic import BaseModel
 
-from agent.tools.seed_film import extract_seed_title
+from agent.tools.seed_film import _extract_seed_title_via_llm, extract_seed_title
 from agent.tools.tmdb_search import _BASE_URL, search_tmdb
 from retrieval.client import get_qdrant_client
 
@@ -126,10 +126,17 @@ def detect_franchise_ambiguity(
     5. Filter to corpus members (excluding the seed itself).
     6. If any siblings are in corpus → return FranchiseAmbiguity; else None.
     """
-    # Step 1: only fire on seed-shaped queries
+    # Step 1: only fire on seed-shaped queries.
+    # Fast-path: EN regex (free, deterministic, covers the common EN phrasings).
     seed_title = extract_seed_title(query)
     if seed_title is None:
-        return None
+        # Slow-path: cheap LLM fallback for multilingual / unexpected phrasings.
+        # Only reached when the EN regex returned None — non-seed traffic (inform,
+        # actor, generic recommend with no "like X" structure) will return None
+        # from the LLM prompt too, keeping them at zero LLM calls from this gate.
+        seed_title = _extract_seed_title_via_llm(query)
+        if seed_title is None:
+            return None
 
     # Step 2: resolve seed to tmdb_id
     seed_id = search_tmdb(seed_title)

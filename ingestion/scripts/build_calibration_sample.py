@@ -23,7 +23,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from eval.golden import build_golden_set
+from eval.golden import GoldenSet
 from ingestion.resources.tmdb_movies import DISCOVERY_GENRES, discover_candidate_tmdb_ids
 
 load_dotenv()
@@ -31,6 +31,11 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 _logger = logging.getLogger(__name__)
 
 SAMPLE_CACHE = Path("data/calibration_sample.json")
+# Must match eval/diagnostic/build_suite.py's GOLDEN_CACHE — the calibration
+# sample's targets and the diagnostic suite's query targets have to be the
+# SAME 30 films, or the suite queries against films absent from the sample
+# collection (silently drops to near-zero query coverage).
+GOLDEN_CORPUS_SAMPLE = Path("data/golden_set_corpus_sample.json")
 
 
 def build_sample(*, distractors: int, force: bool = False) -> list[int]:
@@ -43,7 +48,7 @@ def build_sample(*, distractors: int, force: bool = False) -> list[int]:
         )
         return cached["tmdb_ids"]
 
-    golden = build_golden_set()
+    golden = GoldenSet.model_validate(json.loads(GOLDEN_CORPUS_SAMPLE.read_text()))
     target_ids = sorted(golden.holdout_tmdb_ids)
 
     api_key = os.environ["TMDB_API_KEY"]

@@ -24,6 +24,7 @@ from agent.tools.disambiguation import (
     build_collision_question,
     detect_title_collision,
     extract_title_from_query,
+    looks_title_shaped,
     resolve_year_reference,
 )
 
@@ -375,3 +376,174 @@ class TestExtractTitleFromQuery:
 
     def test_pronoun_only_returns_none(self) -> None:
         assert extract_title_from_query("Tell me about it") is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (AC-1.3, AC-1.4, AC-1.5): looks_title_shaped + LLM-fallback gate
+# ---------------------------------------------------------------------------
+
+
+class TestLooksTitleShaped:
+    """Unit tests for the deterministic EN+PT recommend-verb negative filter."""
+
+    @pytest.mark.parametrize("query", [
+        "When was Obsession released?",
+        "Who directed Inception?",
+        "Tell me about Parasite",
+        "Obsession",
+        "Glass Onion",
+        "Quando foi lançado Obsession?",
+        "Quem dirigiu Inception?",
+        "Me fale sobre Parasita",
+    ])
+    def test_title_shaped_queries_return_true(self, query: str) -> None:
+        assert looks_title_shaped(query) is True
+
+    @pytest.mark.parametrize("query", [
+        "recommend something slow and tense",
+        "suggest me a good thriller",
+        "find me something scary",
+        "show me movies about space",
+        "something with a slow burn",
+        "films like Knives Out",
+        "movies like Parasite",
+        "similar to Arrival",
+        "in the style of Kubrick",
+        "what should I watch tonight?",
+        # PT
+        "recomende algo assustador",
+        "sugira um bom thriller",
+        "me indique um filme de suspense",
+        "algo com ritmo lento",
+        "filmes como Parasita",
+        "parecido com Chega de Saudade",
+        "similar a O Auto da Compadecida",
+        "no estilo de Kubrick",
+        "o que assistir hoje à noite?",
+    ])
+    def test_recommend_queries_return_false(self, query: str) -> None:
+        assert looks_title_shaped(query) is False
+
+
+class TestTitleShapedGateInDetection:
+    """AC-1.3 + AC-1.4: the LLM fallback gates correctly on looks_title_shaped."""
+
+    def test_garbled_title_shaped_zero_hit_fires_llm_and_recovers_collision(self) -> None:
+        """AC-1.4: garbled title-shaped 0-hit query → LLM recovers title → collision."""
+        hits_after_llm = [
+            _make_movie_hit(332672, 2015),
+            _make_movie_hit(5155, 1943),
+            _make_movie_hit(1339713, 2026),
+            _make_movie_hit(4780, 1976),
+        ]
+        with (
+            # Regex returns garbled; find_by_exact_title returns [] on garbled title
+            patch(
+                "agent.tools.disambiguation.find_by_exact_title",
+                side_effect=[[], hits_after_llm],
+            ),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                return_value="Obsession",
+            ) as mock_llm,
+        ):
+            # "When was Obsession released?" is title-shaped (inform-intent)
+            result = detect_title_collision(
+                "When was Obsession released?",
+                settings=_make_settings(),
+            )
+
+        assert result is not None
+        assert isinstance(result, TitleCollision)
+        assert result.title == "Obsession"
+        assert len(result.candidates) == 4
+        mock_llm.assert_called_once_with("When was Obsession released?")
+
+    def test_garbled_title_shaped_unique_llm_result_returns_none(self) -> None:
+        """AC-1.4: title-shaped 0-hit → LLM fires → unique title → None (no collision)."""
+        with (
+            patch(
+                "agent.tools.disambiguation.find_by_exact_title",
+                side_effect=[[], [_make_movie_hit(99999, 2010, "Inception")]],
+            ),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                return_value="Inception",
+            ),
+        ):
+            result = detect_title_collision(
+                "When was Inception released?",
+                settings=_make_settings(),
+            )
+
+        assert result is None
+
+    def test_garbled_title_shaped_llm_returns_none_returns_none(self) -> None:
+        """AC-1.4: title-shaped 0-hit → LLM fallback returns None → result None."""
+        with (
+            patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                return_value=None,
+            ) as mock_llm,
+        ):
+            result = detect_title_collision(
+                "When was Obsession released?",
+                settings=_make_settings(),
+            )
+
+        assert result is None
+        mock_llm.assert_called_once()
+
+
+class TestZeroLLMCallBudget:
+    """AC-1.5: spy on _extract_title_via_llm — must be zero calls on not-title-shaped queries."""
+
+    def test_not_title_shaped_fixtures_trigger_zero_llm_calls(self) -> None:
+        """The load-bearing cost assertion: every 'not title-shaped' fixture in the
+        EN+PT fixture set must produce zero _extract_title_via_llm calls even when
+        find_by_exact_title returns [] (simulating a cold corpus miss)."""
+        from tests.agent.fixtures.title_shaped_queries import TITLE_SHAPED_QUERIES
+
+        not_title_shaped = [q for q, shaped in TITLE_SHAPED_QUERIES if not shaped]
+        assert not_title_shaped, "fixture must contain at least one not-title-shaped query"
+
+        with (
+            patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+            ) as mock_llm,
+        ):
+            for query in not_title_shaped:
+                detect_title_collision(query, settings=_make_settings())
+
+        mock_llm.assert_not_called()
+
+    def test_title_shaped_fixtures_may_trigger_llm_on_zero_hits(self) -> None:
+        """Title-shaped queries with 0 corpus hits should fire the LLM fallback."""
+        from tests.agent.fixtures.title_shaped_queries import TITLE_SHAPED_QUERIES
+
+        title_shaped = [q for q, shaped in TITLE_SHAPED_QUERIES if shaped]
+        assert title_shaped, "fixture must contain at least one title-shaped query"
+
+        llm_call_count = 0
+
+        def fake_llm(query: str) -> str | None:
+            nonlocal llm_call_count
+            llm_call_count += 1
+            return None
+
+        with (
+            patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                side_effect=fake_llm,
+            ),
+        ):
+            for query in title_shaped:
+                detect_title_collision(query, settings=_make_settings())
+
+        assert llm_call_count == len(title_shaped), (
+            f"Expected {len(title_shaped)} LLM calls on title-shaped queries with 0 hits,"
+            f" got {llm_call_count}"
+        )

@@ -172,6 +172,57 @@ def _tmdb_point_id(tmdb_id: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Title-shaped validity gate (deterministic, no LLM)
+# ---------------------------------------------------------------------------
+
+# Recommend/discovery-intent stop-phrases (EN + PT, lower-cased).
+# If any phrase from this set appears in the query, the query is likely a
+# "give me options" request with no single named film to disambiguate.
+# This is a *negative* filter — absence of these phrases does NOT guarantee a
+# title is present, but presence strongly indicates no film is being named.
+_RECOMMEND_STOPSET: frozenset[str] = frozenset({
+    # EN discovery/recommend verbs and stock phrases
+    "recommend",
+    "suggest",
+    "find me",
+    "show me",
+    "something",
+    "films like",
+    "movies like",
+    "similar to",
+    "in the style of",
+    "what should i watch",
+    # PT discovery/recommend verbs and stock phrases
+    "recomende",
+    "sugira",
+    "me indique",
+    "algo",
+    "filmes como",
+    "parecido com",
+    "similar a",
+    "no estilo de",
+    "o que assistir",
+})
+
+
+def looks_title_shaped(query: str) -> bool:
+    """Return True unless the query is clearly a discovery/recommend-verb intent.
+
+    Uses a bilingual (EN + PT) recommend-verb negative filter — a small,
+    closed stop set of phrases that signal "give me options" intent rather than
+    "tell me about a specific named film". Absence of those phrases is the only
+    gate; this deliberately errs toward True on ambiguous phrasings so the LLM
+    fallback can make the precise call.
+
+    This is NOT a positive title-matching heuristic (that would recreate the
+    original regex-trap). It only suppresses the obvious no-title/recommend
+    cases that were wastefully triggering the LLM fallback.
+    """
+    lowered = query.lower()
+    return not any(phrase in lowered for phrase in _RECOMMEND_STOPSET)
+
+
+# ---------------------------------------------------------------------------
 # Collision detection (pre-graph gate)
 # ---------------------------------------------------------------------------
 
@@ -205,7 +256,7 @@ def detect_title_collision(
     title = extract_title_from_query(query)
     hits = find_by_exact_title(title, settings=settings) if title else []  # type: ignore[arg-type]
 
-    if not hits:
+    if not hits and looks_title_shaped(query):
         llm_title = _extract_title_via_llm(query)
         if not llm_title:
             return None

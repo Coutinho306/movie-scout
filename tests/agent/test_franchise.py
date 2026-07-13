@@ -11,6 +11,7 @@ import pytest
 
 from agent.tools.franchise import (
     FranchiseAmbiguity,
+    _build_question,
     _point_id,
     detect_franchise_ambiguity,
     resolve_clarification,
@@ -55,6 +56,74 @@ def _make_qdrant_record(tmdb_id: int) -> MagicMock:
     rec = MagicMock()
     rec.id = _point_id(tmdb_id)
     return rec
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_question (AC-1.1, AC-1.2)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildQuestion:
+    """AC-1.1 — reworded two-option question, no yes/no suffix, deterministic."""
+
+    def test_contains_included_option(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", ["Mystery", "Comedy"])
+        assert "included" in q.lower()
+
+    def test_contains_similar_option(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", ["Mystery", "Comedy"])
+        assert "similar" in q.lower()
+
+    def test_no_yes_no_suffix(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", ["Mystery", "Comedy"])
+        assert "yes / no" not in q
+        assert "(yes/no)" not in q
+        assert "yes/no" not in q
+
+    def test_deterministic_across_calls(self) -> None:
+        args = ("Knives Out", "Knives Out Collection", ["Mystery", "Comedy"])
+        assert _build_question(*args) == _build_question(*args)
+
+    def test_genre_enriched_vibe_in_question(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", ["Mystery", "Comedy"])
+        assert "mystery" in q.lower() or "comedy" in q.lower()
+
+    def test_no_genre_fallback_to_similar_vibe(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", [])
+        assert "similar vibe" in q.lower()
+
+    def test_seed_title_in_question(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", [])
+        assert "Knives Out" in q
+
+    def test_collection_name_in_question(self) -> None:
+        q = _build_question("Knives Out", "Knives Out Collection", [])
+        assert "Knives Out Collection" in q
+
+
+class TestResolveClarificationRoundTrip:
+    """AC-1.2 — reworded question's plausible free-text answers still parse correctly."""
+
+    @pytest.mark.parametrize("answer", [
+        "include them",
+        "yes include them",
+        "sequels too",
+        "sure, include all",
+    ])
+    def test_include_answers_return_true(self, answer: str) -> None:
+        assert resolve_clarification(answer) is True
+
+    @pytest.mark.parametrize("answer", [
+        "just the vibe",
+        "only similar ones",
+        "skip the sequels",
+        "no, just similar films",
+    ])
+    def test_exclude_answers_return_false(self, answer: str) -> None:
+        assert resolve_clarification(answer) is False
+
+    def test_unclear_returns_none(self) -> None:
+        assert resolve_clarification("maybe") is None
 
 
 # ---------------------------------------------------------------------------

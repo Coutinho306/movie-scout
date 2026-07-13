@@ -105,8 +105,8 @@ def _build_question(seed_title: str, collection_name: str, genres: list[str]) ->
     else:
         vibe = "similar vibe"
     return (
-        f'"{seed_title}" is part of the {collection_name} — do you want those included, '
-        f"or just films with a {vibe}? (yes / no)"
+        f'"{seed_title}" is part of the {collection_name}. '
+        f"Want those films included, or just others with a {vibe}?"
     )
 
 

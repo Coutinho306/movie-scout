@@ -105,6 +105,23 @@ class TestDetectTitleCollision:
 
         assert result is None
 
+    def test_zero_hits_falls_back_to_llm_extraction(self) -> None:
+        """Regex-extracted title hits zero corpus results → LLM fallback fires."""
+        with (
+            patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                return_value=None,
+            ) as mock_llm,
+        ):
+            result = detect_title_collision(
+                "Who directed Xanadu",
+                settings=_make_settings(),
+            )
+
+        assert result is None
+        mock_llm.assert_called_once()
+
     def test_year_pinned_query_returns_none_without_scroll(self) -> None:
         """'Obsession 2026' already has a year → None; no find_by_exact_title call."""
         with patch("agent.tools.disambiguation.find_by_exact_title") as mock_scroll:
@@ -139,8 +156,14 @@ class TestDetectTitleCollision:
         mock_scroll.assert_not_called()
 
     def test_zero_hits_returns_none(self) -> None:
-        """find_by_exact_title returning [] → None."""
-        with patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]):
+        """find_by_exact_title returning [] and no LLM fallback title → None."""
+        with (
+            patch("agent.tools.disambiguation.find_by_exact_title", return_value=[]),
+            patch(
+                "agent.tools.disambiguation._extract_title_via_llm",
+                return_value=None,
+            ),
+        ):
             result = detect_title_collision(
                 "Who directed Xanadu",
                 settings=_make_settings(),

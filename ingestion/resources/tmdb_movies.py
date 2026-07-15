@@ -13,6 +13,9 @@ from ingestion.chunking import build_movie_embed_text, build_sparse_text
 from ingestion.embedding import Embedder
 from ingestion.models import TmdbMovieMetadata
 
+# Page size for scroll-based existing-id enumeration.
+_SCROLL_PAGE_SIZE: int = 100
+
 _logger = logging.getLogger(__name__)
 TMDB_BASE = "https://api.themoviedb.org/3"
 DISCOVERY_GENRES = [18, 28, 53]  # Drama, Action, Thriller
@@ -156,6 +159,33 @@ def fetch_movie_metadata(
     return metadata
 
 
+def _existing_tmdb_ids(client: QdrantClient, collection_name: str) -> set[int]:
+    """Return the set of tmdb_ids already stored in *collection_name*.
+
+    Paginates via ``client.scroll`` following ``next_page_offset`` until ``None``
+    so collections larger than one scroll page are fully enumerated (AC2).
+    Only the ``tmdb_id`` payload field is requested to keep pages small.
+    """
+    existing: set[int] = set()
+    offset: object = None  # initial offset — Qdrant accepts None to start from beginning
+    while True:
+        records, next_offset = client.scroll(
+            collection_name=collection_name,
+            limit=_SCROLL_PAGE_SIZE,
+            with_payload=["tmdb_id"],
+            with_vectors=False,
+            offset=offset,
+        )
+        for record in records:
+            tmdb_id = (record.payload or {}).get("tmdb_id")
+            if tmdb_id is not None:
+                existing.add(int(tmdb_id))
+        if next_offset is None:
+            break
+        offset = next_offset
+    return existing
+
+
 def load_tmdb_movies(
     api_key: str,
     qdrant_url: str,
@@ -169,6 +199,8 @@ def load_tmdb_movies(
     explicit_tmdb_ids: list[int] | None = None,
     embed_text_recipe: str = "base",
     sparse: bool = False,
+    resume: bool = False,
+    workers: int = 8,
 ) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=30)
 
@@ -180,6 +212,19 @@ def load_tmdb_movies(
             api_key, pages=discovery_pages, genre_ids=genre_ids
         )
         candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
+
+    # Resume: skip ids already present in the collection (applies to both paths).
+    if resume:
+        existing = _existing_tmdb_ids(client, collection_name)
+        before = len(candidate_ids)
+        candidate_ids = [i for i in candidate_ids if i not in existing]
+        _logger.info(
+            '{"step":"tmdb_movies_resume","existing":%d,"skipped":%d,"remaining":%d}',
+            len(existing),
+            before - len(candidate_ids),
+            len(candidate_ids),
+        )
+
     _logger.info('{"step":"tmdb_movies_candidates","count":%d}', len(candidate_ids))
 
     loaded = 0

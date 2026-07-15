@@ -12,6 +12,36 @@ from ingestion.resources.tmdb_movies import TMDB_BASE, tmdb_get
 
 _logger = logging.getLogger(__name__)
 
+# Page size for scroll-based existing-id enumeration.
+_SCROLL_PAGE_SIZE: int = 100
+
+
+def _existing_review_tmdb_ids(client: QdrantClient, collection_name: str) -> set[int]:
+    """Return the set of tmdb_ids that already have at least one chunk in *collection_name*.
+
+    Paginates via ``client.scroll`` following ``next_page_offset`` until ``None``.
+    The skip unit is the tmdb_id (not per-chunk) — a partially-chunked film is
+    treated as already done; re-run without ``--resume`` to repair.
+    """
+    existing: set[int] = set()
+    offset: object = None
+    while True:
+        records, next_offset = client.scroll(
+            collection_name=collection_name,
+            limit=_SCROLL_PAGE_SIZE,
+            with_payload=["tmdb_id"],
+            with_vectors=False,
+            offset=offset,
+        )
+        for record in records:
+            tmdb_id = (record.payload or {}).get("tmdb_id")
+            if tmdb_id is not None:
+                existing.add(int(tmdb_id))
+        if next_offset is None:
+            break
+        offset = next_offset
+    return existing
+
 
 def fetch_reviews(tmdb_id: int, api_key: str) -> list[dict]:
     resp = tmdb_get(
@@ -34,9 +64,21 @@ def load_tmdb_reviews(
     *,
     chunk_max_tokens: int = 300,
     chunk_overlap_tokens: int = 50,
+    resume: bool = False,
 ) -> int:
     client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=30)
     loaded = 0
+
+    if resume:
+        existing = _existing_review_tmdb_ids(client, collection_name)
+        before = len(candidate_tmdb_ids)
+        candidate_tmdb_ids = [i for i in candidate_tmdb_ids if i not in existing]
+        _logger.info(
+            '{"step":"tmdb_reviews_resume","existing":%d,"skipped":%d,"remaining":%d}',
+            len(existing),
+            before - len(candidate_tmdb_ids),
+            len(candidate_tmdb_ids),
+        )
 
     for tmdb_id in candidate_tmdb_ids:
         reviews = fetch_reviews(tmdb_id, api_key)

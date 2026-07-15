@@ -146,6 +146,7 @@ def run_pipeline(
     explicit_tmdb_ids: list[int] | None = None,
     resume: bool = False,
     workers: int = 8,
+    skip_reviews: bool = False,
 ) -> None:
     os.environ["OPENAI_API_KEY"] = openai_api_key
 
@@ -185,18 +186,22 @@ def run_pipeline(
             workers=workers,
         )
         candidate_ids = list(explicit_tmdb_ids)
-        _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
-        reviews_loaded = load_tmdb_reviews(
-            api_key=tmdb_api_key,
-            qdrant_url=qdrant_url,
-            qdrant_api_key=qdrant_api_key,
-            candidate_tmdb_ids=candidate_ids,
-            embedder=embedder,
-            collection_name=settings.reviews_collection,
-            chunk_max_tokens=settings.chunk_max_tokens,
-            chunk_overlap_tokens=settings.chunk_overlap_tokens,
-            resume=resume,
-        )
+        if skip_reviews:
+            reviews_loaded = 0
+            _logger.info('{"step":"reviews_load_skipped","reason":"skip_reviews"}')
+        else:
+            _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
+            reviews_loaded = load_tmdb_reviews(
+                api_key=tmdb_api_key,
+                qdrant_url=qdrant_url,
+                qdrant_api_key=qdrant_api_key,
+                candidate_tmdb_ids=candidate_ids,
+                embedder=embedder,
+                collection_name=settings.reviews_collection,
+                chunk_max_tokens=settings.chunk_max_tokens,
+                chunk_overlap_tokens=settings.chunk_overlap_tokens,
+                resume=resume,
+            )
         _logger.info(
             '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
             movies_loaded,
@@ -228,23 +233,27 @@ def run_pipeline(
         workers=workers,
     )
 
-    candidate_ids = discover_candidate_tmdb_ids(
-        tmdb_api_key, pages=discovery_pages, genre_ids=genre_ids
-    )
-    candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
+    if skip_reviews:
+        reviews_loaded = 0
+        _logger.info('{"step":"reviews_load_skipped","reason":"skip_reviews"}')
+    else:
+        candidate_ids = discover_candidate_tmdb_ids(
+            tmdb_api_key, pages=discovery_pages, genre_ids=genre_ids
+        )
+        candidate_ids = [i for i in candidate_ids if i not in watched_tmdb_ids]
 
-    _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
-    reviews_loaded = load_tmdb_reviews(
-        api_key=tmdb_api_key,
-        qdrant_url=qdrant_url,
-        qdrant_api_key=qdrant_api_key,
-        candidate_tmdb_ids=candidate_ids,
-        embedder=embedder,
-        collection_name=settings.reviews_collection,
-        chunk_max_tokens=settings.chunk_max_tokens,
-        chunk_overlap_tokens=settings.chunk_overlap_tokens,
-        resume=resume,
-    )
+        _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
+        reviews_loaded = load_tmdb_reviews(
+            api_key=tmdb_api_key,
+            qdrant_url=qdrant_url,
+            qdrant_api_key=qdrant_api_key,
+            candidate_tmdb_ids=candidate_ids,
+            embedder=embedder,
+            collection_name=settings.reviews_collection,
+            chunk_max_tokens=settings.chunk_max_tokens,
+            chunk_overlap_tokens=settings.chunk_overlap_tokens,
+            resume=resume,
+        )
     _logger.info(
         '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
         movies_loaded,

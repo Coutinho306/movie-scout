@@ -103,6 +103,14 @@ def _parse_args() -> argparse.Namespace:
         default=8,
         help="number of parallel workers for the concurrent movie loop (default: 8)",
     )
+    parser.add_argument(
+        "--skip-reviews",
+        action="store_true",
+        help=(
+            "load movies only; skip the review loader entirely (leaves the "
+            "reviews collection untouched). Default off preserves movies+reviews."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -178,6 +186,7 @@ def main() -> None:
         explicit_tmdb_ids=explicit_tmdb_ids,
         resume=args.resume,
         workers=args.workers,
+        skip_reviews=args.skip_reviews,
     )
 
 

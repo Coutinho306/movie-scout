@@ -17,7 +17,7 @@ _TOKEN_TO_EMBEDDER = {v: k for k, v in _EMBEDDER_TO_TOKEN.items()}
 
 _DEFAULT_CHUNK_MAX = 300
 _DEFAULT_CHUNK_OVERLAP = 50
-_DEFAULT_RECIPE = "keywords"
+_DEFAULT_RECIPE = "themes"
 
 
 class Settings(BaseSettings):
@@ -28,7 +28,10 @@ class Settings(BaseSettings):
     chunk_overlap_tokens: int = _DEFAULT_CHUNK_OVERLAP
     # What text we embed per movie: "base" (title/genres/cast/tagline/overview),
     # "keywords" (base + TMDB keywords), or "themes" (keywords + LLM abstract sentences).
-    # The pre-spike found keywords is the real lever; themes adds abstract register.
+    # Production default is "themes": proven +0.0611 tier-3 nDCG gain vs keywords on the
+    # calibration sample (specs/features/done/0003-theme-forward-embed-recipe/STATUS.md).
+    # Plain Settings() → themes → unsuffixed tmdb_movies / tmdb_reviews collections.
+    # keywords and base are now non-default variants (they get a _{recipe} suffix).
     embed_text_recipe: Literal["base", "keywords", "themes"] = _DEFAULT_RECIPE
     # Calibration namespace: when True, collections get a "calib_" marker so a
     # sample ingest never maps onto (or clobbers) the production default collections.

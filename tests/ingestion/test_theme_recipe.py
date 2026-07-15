@@ -242,11 +242,11 @@ def test_extract_themes_reads_existing_cache_on_startup(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_settings_themes_variant_suffix() -> None:
-    """Settings(embed_text_recipe='themes', sample=True).variant_suffix ends with 'themes'."""
+    """themes is now the default recipe, so its suffix carries no recipe token."""
     from ingestion.config import Settings
 
     s = Settings(embed_text_recipe="themes", sample=True)
-    assert s.variant_suffix == "calib_3small_c300o50_themes"
+    assert s.variant_suffix == "calib_3small_c300o50"
 
 
 def test_settings_from_variant_suffix_themes_round_trip() -> None:

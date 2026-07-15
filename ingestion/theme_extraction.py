@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from pathlib import Path
 
 from openai import OpenAI
@@ -35,6 +36,13 @@ _client: OpenAI | None = None
 
 # Module-level in-process cache (populated from disk on first access).
 _cache: dict[str, str] | None = None
+
+# Guards the check-then-return (cache read) and the cache-write critical sections.
+# The slow LLM call is intentionally kept OUTSIDE the lock so concurrent misses
+# on distinct ids do not serialize on the network.  A double-miss (two threads
+# miss before either writes) costs at most one redundant LLM call and is
+# last-write-wins safe — the file never corrupts.
+_lock = threading.Lock()
 
 
 def _get_client() -> OpenAI:
@@ -74,12 +82,16 @@ def extract_themes(
     runs resume without re-calling the LLM for already-processed films.
     """
     key = str(metadata.tmdb_id)
-    cache = _load_cache()
 
-    if key in cache:
-        logger.debug('{"step":"theme_cache_hit","tmdb_id":%s}', key)
-        return cache[key]
+    # --- Critical section 1: check cache (fast path) ---
+    with _lock:
+        cache = _load_cache()
+        if key in cache:
+            logger.debug('{"step":"theme_cache_hit","tmdb_id":%s}', key)
+            return cache[key]
 
+    # LLM call is OUTSIDE the lock — concurrent misses on distinct ids do not
+    # serialize.  A double-miss (two threads, same id) is last-write-wins safe.
     try:
         prompt = _PROMPT_TEMPLATE.format(
             title=metadata.title,
@@ -100,7 +112,11 @@ def extract_themes(
         return ""
 
     result = text if text else ""
-    cache[key] = result
-    _save_cache(cache)
+
+    # --- Critical section 2: write cache (re-load in case another thread wrote) ---
+    with _lock:
+        cache = _load_cache()
+        cache[key] = result
+        _save_cache(cache)
     logger.debug('{"step":"theme_generated","tmdb_id":%s}', key)
     return result

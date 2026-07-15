@@ -89,6 +89,20 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="reuse the existing taste_profile.json without recomputing",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "skip films (movies) / films-with-chunks (reviews) already present in "
+            "the target collection; default off so --rebuild stays a clean-slate op"
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="number of parallel workers for the concurrent movie loop (default: 8)",
+    )
     return parser.parse_args()
 
 
@@ -162,6 +176,8 @@ def main() -> None:
         refresh_taste=args.refresh_taste,
         skip_taste=args.skip_taste,
         explicit_tmdb_ids=explicit_tmdb_ids,
+        resume=args.resume,
+        workers=args.workers,
     )
 
 

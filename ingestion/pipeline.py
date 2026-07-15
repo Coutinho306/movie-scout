@@ -144,6 +144,8 @@ def run_pipeline(
     refresh_taste: bool = False,
     skip_taste: bool = False,
     explicit_tmdb_ids: list[int] | None = None,
+    resume: bool = False,
+    workers: int = 8,
 ) -> None:
     os.environ["OPENAI_API_KEY"] = openai_api_key
 
@@ -179,6 +181,8 @@ def run_pipeline(
             explicit_tmdb_ids=explicit_tmdb_ids,
             embed_text_recipe=settings.embed_text_recipe,
             sparse=settings.sparse,
+            resume=resume,
+            workers=workers,
         )
         candidate_ids = list(explicit_tmdb_ids)
         _logger.info('{"step":"reviews_load_start","candidates":%d}', len(candidate_ids))
@@ -191,6 +195,7 @@ def run_pipeline(
             collection_name=settings.reviews_collection,
             chunk_max_tokens=settings.chunk_max_tokens,
             chunk_overlap_tokens=settings.chunk_overlap_tokens,
+            resume=resume,
         )
         _logger.info(
             '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',
@@ -219,6 +224,8 @@ def run_pipeline(
         discovery_pages=discovery_pages,
         genre_ids=genre_ids,
         embed_text_recipe=settings.embed_text_recipe,
+        resume=resume,
+        workers=workers,
     )
 
     candidate_ids = discover_candidate_tmdb_ids(
@@ -236,6 +243,7 @@ def run_pipeline(
         collection_name=settings.reviews_collection,
         chunk_max_tokens=settings.chunk_max_tokens,
         chunk_overlap_tokens=settings.chunk_overlap_tokens,
+        resume=resume,
     )
     _logger.info(
         '{"step":"pipeline_complete","movies_loaded":%d,"reviews_loaded":%d}',

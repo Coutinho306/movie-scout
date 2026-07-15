@@ -3,6 +3,7 @@
 import logging
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import requests
@@ -186,6 +187,85 @@ def _existing_tmdb_ids(client: QdrantClient, collection_name: str) -> set[int]:
     return existing
 
 
+def _process_movie(
+    tmdb_id: int,
+    *,
+    api_key: str,
+    embedder: Embedder,
+    client: QdrantClient,
+    collection_name: str,
+    embed_text_recipe: str,
+    sparse: bool,
+) -> bool:
+    """Fetch, embed, and upsert a single movie.  Returns True on success.
+
+    ``metadata is None`` (TMDB fetch miss) returns False immediately.
+    Any other exception propagates to the caller (caught in the ThreadPoolExecutor
+    consumer as a per-item skip).
+
+    The point id (``uuid5(NAMESPACE_DNS, str(tmdb_id))``) and payload dict shape
+    are preserved exactly as before (AC7).
+    """
+    metadata = fetch_movie_metadata(tmdb_id, api_key, embed_text_recipe=embed_text_recipe)
+    if metadata is None:
+        return False
+
+    # embed_texts is the document path; embed_single is reserved for queries
+    # (it may prepend a query instruction, e.g. for bge models).
+    dense_vector = embedder.embed_texts([metadata.embed_text])[0]
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(tmdb_id)))
+
+    if sparse:
+        # Sample+sparse path: named dense vector ("") + BM25 Document ("text").
+        # The client tokenises the Document locally via fastembed; the server
+        # stores the sparse vector and applies IDF at query time.
+        # Sparse text is built via the shared build_sparse_text (enriched-base
+        # recipe: title, year, genres, director, cast top-5, tagline, overview;
+        # no keywords clause).  Using the shared builder here and in the
+        # backfill script is the drift guard — both call sites are bound to
+        # the same function so the recipes cannot diverge silently.
+        _sparse_text = build_sparse_text(
+            title=metadata.title,
+            year=metadata.year,
+            genres=metadata.genres,
+            director=metadata.director,
+            cast=metadata.cast,
+            tagline=metadata.tagline,
+            overview=metadata.overview,
+        )
+        vector: dict | list = {
+            "": dense_vector,
+            "text": models.Document(text=_sparse_text, model="Qdrant/bm25"),
+        }
+    else:
+        vector = dense_vector
+
+    client.upsert(
+        collection_name=collection_name,
+        points=[
+            PointStruct(
+                id=point_id,
+                vector=vector,
+                payload={
+                    "tmdb_id": metadata.tmdb_id,
+                    "title": metadata.title,
+                    "year": metadata.year,
+                    "genres": metadata.genres,
+                    "cast": metadata.cast,
+                    "director": metadata.director,
+                    "overview": metadata.overview,
+                    "tagline": metadata.tagline,
+                    "runtime": metadata.runtime,
+                    "vote_average": metadata.vote_average,
+                    "popularity": metadata.popularity,
+                    "themes": metadata.themes,
+                },
+            )
+        ],
+    )
+    return True
+
+
 def load_tmdb_movies(
     api_key: str,
     qdrant_url: str,
@@ -228,69 +308,31 @@ def load_tmdb_movies(
     _logger.info('{"step":"tmdb_movies_candidates","count":%d}', len(candidate_ids))
 
     loaded = 0
-    for tmdb_id in candidate_ids:
-        metadata = fetch_movie_metadata(
-            tmdb_id, api_key, embed_text_recipe=embed_text_recipe
-        )
-        if metadata is None:
-            continue
-
-        # embed_texts is the document path; embed_single is reserved for queries
-        # (it may prepend a query instruction, e.g. for bge models).
-        dense_vector = embedder.embed_texts([metadata.embed_text])[0]
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(tmdb_id)))
-
-        if sparse:
-            # Sample+sparse path: named dense vector ("") + BM25 Document ("text").
-            # The client tokenises the Document locally via fastembed; the server
-            # stores the sparse vector and applies IDF at query time.
-            # Sparse text is built via the shared build_sparse_text (enriched-base
-            # recipe: title, year, genres, director, cast top-5, tagline, overview;
-            # no keywords clause).  Using the shared builder here and in the
-            # backfill script is the drift guard — both call sites are bound to
-            # the same function so the recipes cannot diverge silently.
-            _sparse_text = build_sparse_text(
-                title=metadata.title,
-                year=metadata.year,
-                genres=metadata.genres,
-                director=metadata.director,
-                cast=metadata.cast,
-                tagline=metadata.tagline,
-                overview=metadata.overview,
-            )
-            vector: dict | list = {
-                "": dense_vector,
-                "text": models.Document(
-                    text=_sparse_text, model="Qdrant/bm25"
-                ),
-            }
-        else:
-            vector = dense_vector
-
-        client.upsert(
-            collection_name=collection_name,
-            points=[
-                PointStruct(
-                    id=point_id,
-                    vector=vector,
-                    payload={
-                        "tmdb_id": metadata.tmdb_id,
-                        "title": metadata.title,
-                        "year": metadata.year,
-                        "genres": metadata.genres,
-                        "cast": metadata.cast,
-                        "director": metadata.director,
-                        "overview": metadata.overview,
-                        "tagline": metadata.tagline,
-                        "runtime": metadata.runtime,
-                        "vote_average": metadata.vote_average,
-                        "popularity": metadata.popularity,
-                        "themes": metadata.themes,
-                    },
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_id = {
+            executor.submit(
+                _process_movie,
+                tmdb_id,
+                api_key=api_key,
+                embedder=embedder,
+                client=client,
+                collection_name=collection_name,
+                embed_text_recipe=embed_text_recipe,
+                sparse=sparse,
+            ): tmdb_id
+            for tmdb_id in candidate_ids
+        }
+        for future in as_completed(future_to_id):
+            tmdb_id = future_to_id[future]
+            try:
+                if future.result():
+                    loaded += 1
+            except Exception as exc:
+                _logger.warning(
+                    '{"step":"movie_skip","tmdb_id":%d,"error":"%s"}',
+                    tmdb_id,
+                    type(exc).__name__,
                 )
-            ],
-        )
-        loaded += 1
 
     _logger.info('{"step":"tmdb_movies_done","loaded":%d}', loaded)
     return loaded

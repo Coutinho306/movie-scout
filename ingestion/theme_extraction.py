@@ -18,9 +18,10 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from pathlib import Path
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
 from ingestion.models import TmdbMovieMetadata
 
@@ -92,22 +93,42 @@ def extract_themes(
 
     # LLM call is OUTSIDE the lock — concurrent misses on distinct ids do not
     # serialize.  A double-miss (two threads, same id) is last-write-wins safe.
-    try:
-        prompt = _PROMPT_TEMPLATE.format(
-            title=metadata.title,
-            year=metadata.year,
-            genres=", ".join(metadata.genres),
-            overview=metadata.overview,
-            keywords=", ".join(metadata.keywords),
-        )
-        response = _get_client().chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=120,
-            temperature=0.3,
-        )
-        text = (response.choices[0].message.content or "").strip()
-    except Exception:
+    prompt = _PROMPT_TEMPLATE.format(
+        title=metadata.title,
+        year=metadata.year,
+        genres=", ".join(metadata.genres),
+        overview=metadata.overview,
+        keywords=", ".join(metadata.keywords),
+    )
+    text = ""
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = _get_client().chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=120,
+                temperature=0.3,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            break
+        except APIStatusError as e:
+            if e.status_code == 429 and attempt < max_attempts:
+                wait_s = 2.0 * (2 ** (attempt - 1))
+                logger.warning(
+                    '{"step":"theme_llm_retry","tmdb_id":%s,"attempt":%d,"wait_s":%.1f}',
+                    key,
+                    attempt,
+                    wait_s,
+                )
+                time.sleep(wait_s)
+                continue
+            logger.warning('{"step":"theme_llm_error","tmdb_id":%s}', key)
+            return ""
+        except Exception:
+            logger.warning('{"step":"theme_llm_error","tmdb_id":%s}', key)
+            return ""
+    else:
         logger.warning('{"step":"theme_llm_error","tmdb_id":%s}', key)
         return ""
 

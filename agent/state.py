@@ -56,6 +56,7 @@ class AgentRunResult(BaseModel):
     final_answer: str
     citations: list[RecItem]
     retrieved_tmdb_ids: list[int] = []  # raw RAG hit ids, for hallucination-rate scoring
+    retrieved_overviews: dict[int, str] = {}  # tmdb_id -> overview, for RAGAS grounding context
     tool_calls: int
     latency_ms: float
     cost_usd: float

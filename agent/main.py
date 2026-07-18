@@ -231,6 +231,11 @@ def run(user_query: str, settings: AgentSettings | None = None) -> AgentRunResul
     retrieved_tmdb_ids = [
         h["tmdb_id"] for h in result.get("rag_hits", []) if "tmdb_id" in h
     ]
+    retrieved_overviews = {
+        h["tmdb_id"]: h.get("overview", "")
+        for h in result.get("rag_hits", [])
+        if "tmdb_id" in h
+    }
 
     log_line = {
         "step": "agent_run",
@@ -247,6 +252,7 @@ def run(user_query: str, settings: AgentSettings | None = None) -> AgentRunResul
         final_answer=result.get("final_answer") or "No recommendation generated.",
         citations=citations,
         retrieved_tmdb_ids=retrieved_tmdb_ids,
+        retrieved_overviews=retrieved_overviews,
         tool_calls=result.get("rag_calls", 0) + result.get("web_calls", 0),
         latency_ms=latency_ms,
         cost_usd=result.get("cost_usd", 0.0),

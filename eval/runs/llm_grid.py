@@ -90,8 +90,15 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
             latencies.append(latency_ms)
             total_cost += result.cost_usd
 
-            # Contexts = top RAG hits titles (simplified)
-            contexts = [c.title for c in result.citations]
+            # Contexts = overview text of each cited film (real grounding text,
+            # not just the title — a title alone can't substantiate why_for_you
+            # claims, which made faithfulness scores meaningless).
+            contexts = [
+                result.retrieved_overviews[c.tmdb_id]
+                for c in result.citations
+                if c.tmdb_id in result.retrieved_overviews
+                and result.retrieved_overviews[c.tmdb_id]
+            ]
             try:
                 f_vals.append(ragas_faithfulness(gq.text, result.final_answer, contexts))
                 ar_vals.append(ragas_answer_relevancy(gq.text, result.final_answer, contexts))

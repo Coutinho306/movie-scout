@@ -8,7 +8,6 @@ separately uses default settings for reviews (dense-only).
 
 from pathlib import Path
 
-import pytest
 
 from ingestion.scripts.compute_taste import load_taste_profile
 from retrieval.config import RetrievalSettings

@@ -47,6 +47,11 @@ markers = [
     "integration: tests that require live Qdrant + OpenAI + Tavily/TMDB",
 ]
 
+[tool.ruff.lint]
+# E402: load_dotenv() before imports is intentional in eval/diagnostic scripts.
+# F841: unused local variables are acceptable in test fixtures/assertions.
+ignore = ["E402", "F841"]
+
 [dependency-groups]
 dev = [
     "psycopg2-binary>=2.9.12",

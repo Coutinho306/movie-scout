@@ -173,3 +173,43 @@ def test_concurrent_theme_cache_overlapping_ids_all_present() -> None:
     on_disk = json.loads(cache_path.read_text())
     for tid in distinct_ids:
         assert str(tid) in on_disk, f"Key {tid} missing from cache"
+
+
+def test_concurrent_failure_does_not_clobber_successful_cache_write() -> None:
+    """A failed (empty-string) concurrent attempt must never overwrite a
+    successful cached result for the same id — the failed write loses."""
+    tmdb_id = 42
+    movie = _make_movie(tmdb_id)
+
+    call_order_lock = threading.Lock()
+    call_index = 0
+
+    def _fake_create(**kwargs: object) -> MagicMock:
+        nonlocal call_index
+        with call_order_lock:
+            idx = call_index
+            call_index += 1
+        if idx == 0:
+            # First caller "succeeds" immediately.
+            mock_response = MagicMock()
+            mock_response.choices[0].message.content = "A real theme sentence."
+            return mock_response
+        # Every other concurrent caller exhausts retries and fails.
+        raise RuntimeError("simulated persistent failure")
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = _fake_create
+
+    with patch.object(theme_mod, "_get_client", return_value=mock_client):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                executor.submit(theme_mod.extract_themes, movie) for _ in range(8)
+            ]
+            _ = [f.result() for f in as_completed(futures)]
+
+    cache_path = theme_mod._CACHE_PATH
+    on_disk = json.loads(cache_path.read_text())
+    assert on_disk[str(tmdb_id)] == "A real theme sentence.", (
+        "A failed concurrent attempt overwrote the successful cached result "
+        f"with: {on_disk[str(tmdb_id)]!r}"
+    )

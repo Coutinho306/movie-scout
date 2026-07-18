@@ -92,7 +92,8 @@ def extract_themes(
             return cache[key]
 
     # LLM call is OUTSIDE the lock — concurrent misses on distinct ids do not
-    # serialize.  A double-miss (two threads, same id) is last-write-wins safe.
+    # serialize. A double-miss (two threads, same id) is safe because critical
+    # section 2 below refuses to let an empty/failed result clobber a valid one.
     prompt = _PROMPT_TEMPLATE.format(
         title=metadata.title,
         year=metadata.year,
@@ -102,6 +103,8 @@ def extract_themes(
     )
     text = ""
     max_attempts = 5
+    # Retryable: 429 (rate limit) and 5xx (transient server errors) — both are
+    # recoverable with backoff, unlike 4xx client errors (bad request, auth).
     for attempt in range(1, max_attempts + 1):
         try:
             response = _get_client().chat.completions.create(
@@ -113,12 +116,14 @@ def extract_themes(
             text = (response.choices[0].message.content or "").strip()
             break
         except APIStatusError as e:
-            if e.status_code == 429 and attempt < max_attempts:
+            retryable = e.status_code == 429 or e.status_code >= 500
+            if retryable and attempt < max_attempts:
                 wait_s = 2.0 * (2 ** (attempt - 1))
                 logger.warning(
-                    '{"step":"theme_llm_retry","tmdb_id":%s,"attempt":%d,"wait_s":%.1f}',
+                    '{"step":"theme_llm_retry","tmdb_id":%s,"attempt":%d,"status":%d,"wait_s":%.1f}',
                     key,
                     attempt,
+                    e.status_code,
                     wait_s,
                 )
                 time.sleep(wait_s)
@@ -135,9 +140,13 @@ def extract_themes(
     result = text if text else ""
 
     # --- Critical section 2: write cache (re-load in case another thread wrote) ---
+    # A concurrent duplicate-id race (two threads processing the same tmdb_id) can
+    # reach here with two different results. Never let an empty/failed result
+    # overwrite an already-cached non-empty one — the failed attempt loses.
     with _lock:
         cache = _load_cache()
-        cache[key] = result
-        _save_cache(cache)
+        if result or key not in cache or not cache[key]:
+            cache[key] = result
+            _save_cache(cache)
     logger.debug('{"step":"theme_generated","tmdb_id":%s}', key)
     return result

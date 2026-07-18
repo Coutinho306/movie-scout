@@ -57,6 +57,13 @@ eval/runs/*
 # hybrid search eval — BM25 sparse enrichment writeup
 !eval/runs/hybrid_search_eval.md
 
+# production retrieval + LLM eval grids (2026-07-18, post BM25-fix + RAGAS-fix,
+# full 15,502-film corpus) — see eval/runs/llm_eval_summary.md
+!eval/runs/best_retrieval.json
+!eval/runs/retrieval_20260718T175125.csv
+!eval/runs/llm_20260718T214039.csv
+!eval/runs/llm_eval_summary.md
+
 # planning (local only)
 specs/
 

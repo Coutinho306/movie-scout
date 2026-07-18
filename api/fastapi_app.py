@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Callable
 from uuid import uuid4
@@ -102,9 +103,25 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             }
         )
 
-        result: AgentRunResult = await run_in_threadpool(
-            agent_run, req.query, per_request_settings
-        )
+        _t0 = time.perf_counter()
+        try:
+            result: AgentRunResult = await run_in_threadpool(
+                agent_run, req.query, per_request_settings
+            )
+        except Exception:  # noqa: BLE001
+            _elapsed_ms = (time.perf_counter() - _t0) * 1000
+            logger.exception(
+                json.dumps({"step": "api_ask_error", "run_id": str(run_id)})
+            )
+            return AskResponse(
+                run_id=run_id,
+                final_answer="Sorry, I couldn't complete that request — try rephrasing",
+                citations=[],
+                latency_ms=round(_elapsed_ms, 1),
+                cost_usd=0.0,
+                tool_calls=0,
+                needs_clarification=False,
+            )
 
         logger.info(
             json.dumps(

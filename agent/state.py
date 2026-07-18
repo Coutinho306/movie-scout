@@ -55,6 +55,7 @@ class RecItem(BaseModel):
 class AgentRunResult(BaseModel):
     final_answer: str
     citations: list[RecItem]
+    retrieved_tmdb_ids: list[int] = []  # raw RAG hit ids, for hallucination-rate scoring
     tool_calls: int
     latency_ms: float
     cost_usd: float

@@ -102,8 +102,7 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
             tm_vals.append(taste_match(result.final_answer))
 
             cited_ids = [c.tmdb_id for c in result.citations]
-            retrieved_ids = list(gq.target_tmdb_ids)  # simplified
-            hr_vals.append(hallucination_rate(cited_ids, retrieved_ids))
+            hr_vals.append(hallucination_rate(cited_ids, result.retrieved_tmdb_ids))
 
         def safe_mean(vals: list) -> float:
             valid = [v for v in vals if v == v]  # filter nan

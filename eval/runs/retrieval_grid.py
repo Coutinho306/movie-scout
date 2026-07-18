@@ -38,7 +38,6 @@ def _run_config(cfg: dict, golden: GoldenSet) -> dict:
     settings = RetrievalSettings(
         top_k=cfg["top_k"],
         hybrid=cfg["hybrid"],
-        rerank=cfg["rerank"],
         query_rewrite=cfg["query_rewrite"],
     )
     # Pin the query embedder + collection to the variant's ingestion config so the
@@ -97,7 +96,7 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
     out_path = RUNS_DIR / f"retrieval_{ts}.csv"
 
     fieldnames = [
-        "config_id", "top_k", "variant", "hybrid", "rerank", "query_rewrite",
+        "config_id", "top_k", "variant", "hybrid", "query_rewrite",
         "mean_precision_at_k", "mean_recall_at_k", "mean_mrr", "mean_ndcg_at_k",
         "latency_p50_ms", "cost_usd",
     ]
@@ -121,7 +120,7 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
         json.dumps(
             {
                 k: best[k]
-                for k in ["config_id", "top_k", "variant", "hybrid", "rerank", "query_rewrite"]
+                for k in ["config_id", "top_k", "variant", "hybrid", "query_rewrite"]
             },
             indent=2,
         )

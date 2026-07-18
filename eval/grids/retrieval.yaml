@@ -1,5 +1,4 @@
 top_k: [5, 10]
 variant: ["default"]
 hybrid: [false, true]
-rerank: [false, true]
 query_rewrite: [false, true]

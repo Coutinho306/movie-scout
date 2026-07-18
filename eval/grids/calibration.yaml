@@ -1,5 +1,5 @@
 # Calibration grid — embedding / chunk / embed_text recipe ONLY (small sample).
-# Retrieval knobs (hybrid/rerank/query_rewrite) are NOT swept here; they're
+# Retrieval knobs (hybrid/query_rewrite) are NOT swept here; they're
 # calibrated post-B on the full corpus (they don't re-embed). See the spike.
 #
 # Each variant maps to a disposable calib_ collection ingested separately via
@@ -12,5 +12,4 @@ variant:
   - "calib_3small_c150o30_keywords"    # chunk sweep: smaller (reviews only; movie metrics expected flat)
   - "calib_3small_c600o100_keywords"   # chunk sweep: larger
 hybrid: [false]
-rerank: [false]
 query_rewrite: [false]

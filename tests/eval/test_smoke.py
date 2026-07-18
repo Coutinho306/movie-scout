@@ -11,7 +11,6 @@ def test_retrieval_grid_smoke(tmp_path):
         "top_k": [5],
         "variant": ["default"],
         "hybrid": [False, True],
-        "rerank": [False],
         "query_rewrite": [False],
     }
     grid_file = tmp_path / "test_grid.yaml"

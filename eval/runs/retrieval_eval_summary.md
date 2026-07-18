@@ -48,13 +48,16 @@ needle, tied at nDCG 0.1252). Production defaults (`hybrid=False`,
    decisively on genre/mood and actor-name queries, tiers where this flat
    golden set has few examples; net effect here is negative because those
    query types are underrepresented in this particular grid's query mix).
-3. **`rerank=True` is a config no-op in the current build** — every
-   rerank=True row is bit-identical to its rerank=False counterpart
-   (confirmed: `retrieval/movies.py` never reads the `rerank` flag). The
-   cross-encoder reranker described in early planning docs (`__temp/STACK.md`,
-   marked superseded) was never wired in. Documented here rather than
-   silently dropped from the grid, since a reviewer comparing configs would
-   otherwise wonder why two rows tie exactly.
+3. **`rerank=True` was a config no-op** — every rerank=True row was
+   bit-identical to its rerank=False counterpart (confirmed:
+   `retrieval/movies.py` never read the `rerank` flag). The cross-encoder
+   reranker described in early planning docs (`__temp/STACK.md`, marked
+   superseded) was never wired in. Documented here rather than silently
+   dropped from the grid, since a reviewer comparing configs would otherwise
+   wonder why two rows tie exactly. **Update (specs/project-gap-analysis):**
+   the dead `rerank` field has since been deleted from `RetrievalSettings`
+   and the grid axis removed — a later grid run won't have a `rerank`
+   column at all, rather than a silently-tied one.
 4. **top_k (5 vs 10) has no effect on nDCG** at matching hybrid/rerank/rewrite
    settings — expected, since nDCG@k already discounts by rank and the golden
    set averages ~1 relevant target per query, so results beyond the top few

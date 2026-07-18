@@ -49,22 +49,17 @@ def ensure_collections(client: QdrantClient, settings: Settings) -> None:
     reviews_col = settings.reviews_collection
 
     if movies_col not in existing:
-        if settings.sample and settings.sparse:
-            # Sample-only: create a named dense vector ("") plus a BM25 sparse
-            # vector ("text") to enable native RRF hybrid search.  Production
-            # path (non-sample) stays as a single unnamed dense VectorParams.
-            client.create_collection(
-                collection_name=movies_col,
-                vectors_config={"": VectorParams(size=dim, distance=Distance.COSINE)},
-                sparse_vectors_config={
-                    "text": SparseVectorParams(modifier=Modifier.IDF)
-                },
-            )
-        else:
-            client.create_collection(
-                collection_name=movies_col,
-                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-            )
+        # tmdb_movies always gets a BM25 sparse "text" vector alongside dense so
+        # hybrid (RRF) search works regardless of ingest variant. A prior version
+        # of this gated sparse config on settings.sample, which meant any full
+        # rebuild of the production collection (--rebuild, or a manual
+        # delete+recreate) silently dropped hybrid search — see
+        # scripts/backfill_bm25_sparse.py for the one-off repair this required.
+        client.create_collection(
+            collection_name=movies_col,
+            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            sparse_vectors_config={"text": SparseVectorParams(modifier=Modifier.IDF)},
+        )
     client.create_payload_index(movies_col, "tmdb_id", PayloadSchemaType.KEYWORD)
     client.create_payload_index(movies_col, "year", PayloadSchemaType.INTEGER)
     client.create_payload_index(movies_col, "genres", PayloadSchemaType.KEYWORD)

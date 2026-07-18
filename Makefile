@@ -1,4 +1,4 @@
-.PHONY: up down ingest eval logs build snapshot restore-seed
+.PHONY: up down ingest eval logs build snapshot restore-seed lint
 
 # Bring up the runtime stack (postgres, grafana, api, frontend, qdrant).
 up:
@@ -36,3 +36,6 @@ snapshot:
 #   make restore-seed
 restore-seed:
 	uv run python3 scripts/restore_qdrant.py
+
+lint:
+	uv run ruff check .

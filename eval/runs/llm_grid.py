@@ -92,8 +92,13 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
 
             # Contexts = top RAG hits titles (simplified)
             contexts = [c.title for c in result.citations]
-            f_vals.append(ragas_faithfulness(gq.text, result.final_answer, contexts))
-            ar_vals.append(ragas_answer_relevancy(gq.text, result.final_answer, contexts))
+            try:
+                f_vals.append(ragas_faithfulness(gq.text, result.final_answer, contexts))
+                ar_vals.append(ragas_answer_relevancy(gq.text, result.final_answer, contexts))
+            except Exception as exc:  # noqa: BLE001 — one query's RAGAS failure shouldn't sink a paid grid run
+                logger.error("RAGAS scoring failed for query %r: %s", gq.text, exc)
+                f_vals.append(float("nan"))
+                ar_vals.append(float("nan"))
             tm_vals.append(taste_match(result.final_answer))
 
             cited_ids = [c.tmdb_id for c in result.citations]

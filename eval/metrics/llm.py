@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +15,25 @@ logger = logging.getLogger(__name__)
 
 TASTE_PROFILE_PATH = Path("data/taste_profile.json")
 JUDGE_PROMPT_PATH = Path(__file__).parent.parent / "prompts/judge_taste_match.md"
+
+
+def _ensure_ragas_importable() -> None:
+    """Stub out langchain_community.chat_models.vertexai so `import ragas` resolves.
+
+    ragas/llms/base.py unconditionally does
+    `from langchain_community.chat_models.vertexai import ChatVertexAI` at module
+    scope. Our langchain-community (0.4.2, langchain-1.x era) no longer ships that
+    submodule, so plain `import ragas` raises ModuleNotFoundError even though we
+    never touch Vertex AI (judge is ChatOpenAI throughout). Confirmed upstream and
+    still open on ragas `main`: explodinggradients/ragas#2745, #2741. Registering a
+    dummy module satisfies the import; the stub class is never instantiated.
+    """
+    mod_name = "langchain_community.chat_models.vertexai"
+    if mod_name in sys.modules:
+        return
+    stub = types.ModuleType(mod_name)
+    stub.ChatVertexAI = type("ChatVertexAI", (), {})  # never instantiated
+    sys.modules[mod_name] = stub
 
 
 class _LLMMetricSettings(BaseSettings):
@@ -42,44 +63,46 @@ def taste_match(answer_text: str) -> float:
 
 def ragas_faithfulness(question: str, answer: str, contexts: list[str]) -> float:
     """Run RAGAS Faithfulness on one QA pair. Returns score 0-1."""
-    try:
-        from datasets import Dataset
-        from ragas import evaluate
-        from ragas.metrics import faithfulness
+    _ensure_ragas_importable()
+    from datasets import Dataset
+    from ragas import evaluate
+    from ragas.metrics import faithfulness
 
-        ds = Dataset.from_dict(
-            {
-                "question": [question],
-                "answer": [answer],
-                "contexts": [contexts],
-            }
-        )
-        result = evaluate(ds, metrics=[faithfulness])
-        return float(result["faithfulness"])
-    except Exception as exc:  # noqa: BLE001 — tolerate RAGAS API drift
-        logger.warning("RAGAS faithfulness failed: %s", exc)
-        return float("nan")
+    ds = Dataset.from_dict(
+        {
+            "question": [question],
+            "answer": [answer],
+            "contexts": [contexts],
+        }
+    )
+    result = evaluate(ds, metrics=[faithfulness])
+    # result["metric_name"] is a per-row list; we always score exactly one row.
+    return float(result["faithfulness"][0])
 
 
 def ragas_answer_relevancy(question: str, answer: str, contexts: list[str]) -> float:
     """Run RAGAS AnswerRelevancy on one QA pair. Returns score 0-1."""
-    try:
-        from datasets import Dataset
-        from ragas import evaluate
-        from ragas.metrics import answer_relevancy
+    _ensure_ragas_importable()
+    from datasets import Dataset
+    from ragas import evaluate
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.metrics import answer_relevancy
 
-        ds = Dataset.from_dict(
-            {
-                "question": [question],
-                "answer": [answer],
-                "contexts": [contexts],
-            }
-        )
-        result = evaluate(ds, metrics=[answer_relevancy])
-        return float(result["answer_relevancy"])
-    except Exception as exc:  # noqa: BLE001 — tolerate RAGAS API drift
-        logger.warning("RAGAS answer_relevancy failed: %s", exc)
-        return float("nan")
+    ds = Dataset.from_dict(
+        {
+            "question": [question],
+            "answer": [answer],
+            "contexts": [contexts],
+        }
+    )
+    # answer_relevancy needs an embeddings model; ragas' default auto-factory
+    # constructs its "modern" OpenAIEmbeddings without a client (a ragas-internal
+    # bug — `embed_query` ends up missing). Pass our own langchain embeddings
+    # explicitly via the legacy wrapper to bypass the broken auto-factory.
+    embeddings = LangchainEmbeddingsWrapper(OpenAIEmbeddings(model="text-embedding-3-small"))
+    result = evaluate(ds, metrics=[answer_relevancy], embeddings=embeddings)
+    # result["metric_name"] is a per-row list; we always score exactly one row.
+    return float(result["answer_relevancy"][0])
 
 
 def hallucination_rate(tmdb_ids_in_answer: list[int], retrieved_ids: list[int]) -> float:

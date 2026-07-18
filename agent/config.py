@@ -19,6 +19,7 @@ class AgentSettings(BaseSettings):
     tavily_max_results: int = 5
     watch_region: str = "BR"
     query_rewrite: bool = True  # rewrite the user query once before the first RAG retrieval
+    prompt_variant: str = "v1"  # which agent/prompts/synthesize{_variant}.md to use
 
     # Per-request taste profile. When None, cold start (retrieval-only ordering).
     taste_profile: TasteProfile | None = Field(default=None, exclude=True)

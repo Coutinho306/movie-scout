@@ -75,7 +75,9 @@ def run(grid_yaml: Path = DEFAULT_GRID) -> Path:
         latencies: list[float] = []
         total_cost = 0.0
 
-        settings = AgentSettings(temperature=cfg["temperature"])
+        settings = AgentSettings(
+            temperature=cfg["temperature"], prompt_variant=cfg["prompt_variant"]
+        )
 
         for gq in sample:
             t0 = time.time()

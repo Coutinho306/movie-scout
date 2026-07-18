@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def _build_prompt(state: AgentState, settings: AgentSettings) -> str:
-    template = load_prompt("synthesize")
+    prompt_name = "synthesize" if settings.prompt_variant == "v1" else f"synthesize_{settings.prompt_variant}"
+    template = load_prompt(prompt_name)
     rag_hits = json.dumps(state.get("rag_hits", []), ensure_ascii=False)
     web_hits = json.dumps(state.get("web_hits", []), ensure_ascii=False)
     profile = settings.taste_profile

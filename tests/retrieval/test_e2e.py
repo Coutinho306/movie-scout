@@ -21,9 +21,9 @@ from retrieval.taste import score_against_taste
 
 def test_full_retrieval_pipeline() -> None:
     # Movies: use hybrid to exercise the restored RRF path.
-    movie_settings = RetrievalSettings(hybrid=True, rerank=True, query_rewrite=True, top_k=10)
+    movie_settings = RetrievalSettings(hybrid=True, query_rewrite=True, top_k=10)
     # Reviews: dense-only (tmdb_reviews has no sparse field).
-    review_settings = RetrievalSettings(rerank=True, query_rewrite=True, top_k=10)
+    review_settings = RetrievalSettings(query_rewrite=True, top_k=10)
 
     raw_query = "recommend something slow and meditative"
 

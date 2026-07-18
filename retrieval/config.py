@@ -13,7 +13,6 @@ class RetrievalSettings(BaseSettings):
 
     top_k: int = 10
     hybrid: bool = False
-    rerank: bool = False
     query_rewrite: bool = False
     score_threshold: float | None = None
     taste_alpha: float = 0.5  # weight on retrieval_score in blended rank

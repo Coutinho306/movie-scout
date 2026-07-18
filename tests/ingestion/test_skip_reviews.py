@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ingestion.config import Settings
 from ingestion.pipeline import run_pipeline
 
 
-def _run(*, skip_reviews: bool) -> tuple[MagicMock, MagicMock]:
+def _run(*, skip_reviews: bool, monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MagicMock]:
     """Run the sample path with all IO mocked; return (movies_loader, reviews_loader) spies."""
     settings = Settings()
     with (
@@ -31,6 +33,11 @@ def _run(*, skip_reviews: bool) -> tuple[MagicMock, MagicMock]:
         patch("ingestion.pipeline.load_tmdb_movies", return_value=3) as movies,
         patch("ingestion.pipeline.load_tmdb_reviews", return_value=9) as reviews,
     ):
+        # run_pipeline writes openai_api_key into os.environ["OPENAI_API_KEY"] as a
+        # real side effect (get_embedder reads it from env) — monkeypatch.setenv
+        # ensures pytest restores the real key after this test, so later tests
+        # that need a real OpenAI call don't inherit this test's fake "x" key.
+        monkeypatch.setenv("OPENAI_API_KEY", "x")
         run_pipeline(
             tmdb_api_key="x",
             openai_api_key="x",
@@ -43,13 +50,13 @@ def _run(*, skip_reviews: bool) -> tuple[MagicMock, MagicMock]:
     return movies, reviews
 
 
-def test_skip_reviews_true_does_not_call_review_loader() -> None:
-    movies, reviews = _run(skip_reviews=True)
+def test_skip_reviews_true_does_not_call_review_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    movies, reviews = _run(skip_reviews=True, monkeypatch=monkeypatch)
     reviews.assert_not_called()
     movies.assert_called_once()
 
 
-def test_skip_reviews_default_off_calls_review_loader() -> None:
-    movies, reviews = _run(skip_reviews=False)
+def test_skip_reviews_default_off_calls_review_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    movies, reviews = _run(skip_reviews=False, monkeypatch=monkeypatch)
     reviews.assert_called_once()
     movies.assert_called_once()

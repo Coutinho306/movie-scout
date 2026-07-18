@@ -13,7 +13,7 @@ from retrieval.taste import score_against_taste
 from retrieval.rerank import cross_encode_rerank
 from retrieval.rewrite import rewrite_query
 
-settings = RetrievalSettings(top_k=10, hybrid=False, rerank=False, query_rewrite=False)
+settings = RetrievalSettings(top_k=10, hybrid=False, query_rewrite=False)
 
 query = "slow meditative film about memory"
 
@@ -37,7 +37,6 @@ reviews = cross_encode_rerank(query, reviews)
 |---|---|---|
 | `top_k` | 10 | Number of results from Qdrant |
 | `hybrid` | False | BM25 + dense RRF (degrades to vector-only if no sparse index) |
-| `rerank` | False | Cross-encoder rerank (use in caller, not auto-applied) |
 | `query_rewrite` | False | LLM rewrites query before search (use in caller) |
 | `score_threshold` | None | Minimum similarity score filter |
 | `taste_alpha` | 0.5 | Weight of retrieval score vs taste score in blended rank |

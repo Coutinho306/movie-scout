@@ -4,6 +4,10 @@ from __future__ import annotations
 import logging
 import sys
 
+from dotenv import load_dotenv
+
+load_dotenv()  # QDRANT_URL/OPENAI_API_KEY for search, embedding, and agent runs
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 

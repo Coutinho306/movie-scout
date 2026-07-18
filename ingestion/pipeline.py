@@ -176,7 +176,11 @@ def run_pipeline(
             collection_name=settings.movies_collection,
             explicit_tmdb_ids=explicit_tmdb_ids,
             embed_text_recipe=settings.embed_text_recipe,
-            sparse=settings.sparse,
+            # tmdb_movies always has a sparse "text" vector field (ensure_collections
+            # above), so every point must write one too, regardless of the sparse
+            # variant-naming flag (settings.sparse only controls the "_bm25" collection
+            # suffix, not whether the schema/write path support sparse — it always does).
+            sparse=True,
             resume=resume,
             workers=workers,
         )
@@ -224,6 +228,10 @@ def run_pipeline(
         discovery_pages=discovery_pages,
         genre_ids=genre_ids,
         embed_text_recipe=settings.embed_text_recipe,
+        # tmdb_movies always has a sparse "text" vector field (ensure_collections
+        # above), so every point must write one too — omitting this here was the
+        # original bug: the schema existed but production points stayed dense-only.
+        sparse=True,
         resume=resume,
         workers=workers,
     )

@@ -61,6 +61,7 @@ eval/runs/*
 # full 15,502-film corpus) — see eval/runs/llm_eval_summary.md
 !eval/runs/best_retrieval.json
 !eval/runs/retrieval_20260718T175125.csv
+!eval/runs/retrieval_eval_summary.md
 !eval/runs/llm_20260718T214039.csv
 !eval/runs/llm_eval_summary.md
 

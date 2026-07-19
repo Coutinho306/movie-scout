@@ -115,6 +115,7 @@ def test_exhaustion_reraises_last_error() -> None:
     with (
         patch.object(embedder, "_get_client", return_value=mock_client),
         patch("ingestion.embedding.time.sleep"),
+        patch("ingestion.embedding._logger") as mock_logger,
     ):
         with pytest.raises(APIStatusError) as exc_info:
             embedder.embed_texts(["hello"])
@@ -123,6 +124,16 @@ def test_exhaustion_reraises_last_error() -> None:
         f"Expected exactly {_MAX_ATTEMPTS} attempts on exhaustion, got {call_count}"
     )
     assert exc_info.value.status_code == 429
+
+    # The final (exhaustion) attempt must still be logged, not raise silently —
+    # AC-7 requires a warning "per retry attempt", including the last one.
+    warning_calls = mock_logger.warning.call_args_list
+    assert len(warning_calls) == _MAX_ATTEMPTS, (
+        f"Expected {_MAX_ATTEMPTS} warning log calls (one per attempt, including "
+        f"exhaustion), got {len(warning_calls)}"
+    )
+    last_log_args = warning_calls[-1].args
+    assert "embed_retry_exhausted" in last_log_args[0]
 
 
 # ---------------------------------------------------------------------------

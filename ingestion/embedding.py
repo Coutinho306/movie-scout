@@ -83,6 +83,12 @@ class OpenAIEmbedder:
                     time.sleep(wait_s)
                     last_exc = exc
                     continue
+                if retryable:
+                    _logger.warning(
+                        '{"step":"embed_retry_exhausted","attempt":%d,"status":%d}',
+                        attempt,
+                        exc.status_code,
+                    )
                 raise
         # Unreachable — last iteration always raises; satisfies type checker.
         raise last_exc  # type: ignore[misc]

@@ -128,7 +128,7 @@ def _render_clarify_turn(pending_query: str, question: str) -> None:
     """
     st.info(question)
     with st.form("clarify_form", clear_on_submit=True):
-        answer = st.text_input("Your answer (yes / no)…")
+        answer = st.text_input("Your answer…")
         submitted = st.form_submit_button("Submit")
 
     if submitted and answer.strip():
@@ -152,7 +152,7 @@ def _render_clarify_turn(pending_query: str, question: str) -> None:
 
             if resp.get("needs_clarification"):
                 # Extremely unlikely (single-turn cap), but handle gracefully
-                st.warning("Still waiting for clarification — please answer yes or no.")
+                st.warning("Still waiting for clarification — please try answering again.")
             else:
                 st.session_state.history.append(
                     {
@@ -192,7 +192,7 @@ def main() -> None:
     pending_query: str | None = st.session_state.get("pending_query")
     if pending_query is not None:
         pending_question: str = st.session_state.get(
-            "pending_clarify_question", "Do you want franchise sequels included? (yes / no)"
+            "pending_clarify_question", "Do you want franchise sequels included?"
         )
         _render_clarify_turn(pending_query, pending_question)
     else:
@@ -217,7 +217,7 @@ def main() -> None:
                     st.session_state.pending_query = query
                     st.session_state.pending_clarify_question = resp.get(
                         "clarification_question",
-                        "Do you want franchise sequels included? (yes / no)",
+                        "Do you want franchise sequels included?",
                     )
                     st.session_state.franchise_sibling_ids = resp.get(
                         "franchise_sibling_ids", []

@@ -65,6 +65,9 @@ eval/runs/*
 !eval/runs/llm_20260718T214039.csv
 !eval/runs/llm_eval_summary.md
 
+# reranker-wired grid (2026-07-19, adds rerank axis, 16 configs)
+!eval/runs/retrieval_20260719T031539.csv
+
 # planning (local only)
 specs/
 

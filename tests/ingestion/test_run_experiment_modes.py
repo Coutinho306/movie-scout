@@ -15,7 +15,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 def _call_main_with(argv: list[str], extra_context: dict | None = None) -> dict:

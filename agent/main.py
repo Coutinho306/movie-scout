@@ -13,7 +13,6 @@ from agent.state import AgentRunResult, AgentState, RecItem
 from agent.tools.disambiguation import (
     build_collision_question,
     detect_title_collision,
-    fetch_film_by_tmdb_id,
     resolve_year_reference,
 )
 from agent.tools.franchise import detect_franchise_ambiguity, resolve_clarification

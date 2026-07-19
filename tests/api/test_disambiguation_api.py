@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-import pytest
 from fastapi.testclient import TestClient
 from slowapi import Limiter
 

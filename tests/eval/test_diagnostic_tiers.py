@@ -14,7 +14,6 @@ import pytest
 
 from eval.diagnostic.tiers import (
     DiagnosticSuite,
-    TierQuery,
     build_tier_queries,
 )
 

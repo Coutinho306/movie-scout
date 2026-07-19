@@ -7,13 +7,11 @@ seed), AC-7 (unresolvable → newest fallback + one-turn cap), AC-8 (scope).
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from agent.config import AgentSettings
 from agent.main import run
-from agent.state import AgentRunResult
 from agent.tools.disambiguation import CollisionCandidate, TitleCollision
 
 

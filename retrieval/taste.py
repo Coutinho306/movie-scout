@@ -15,11 +15,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ingestion.models import TasteProfile
-from ingestion.scripts.compute_taste import load_taste_profile
 from retrieval.models import MovieHit
 
 if TYPE_CHECKING:
-    from retrieval.config import RetrievalSettings
+    pass
 
 # Retained for offline script + tests only. NOT loaded on the serving path.
 _TASTE_PROFILE_PATH = Path("data/taste_profile.json")

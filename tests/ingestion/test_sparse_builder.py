@@ -9,7 +9,6 @@ Assertions:
 
 from __future__ import annotations
 
-import pytest
 
 from ingestion.chunking import build_movie_embed_text, build_sparse_text
 from ingestion.models import TmdbMovieMetadata

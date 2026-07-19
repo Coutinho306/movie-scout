@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from ingestion.scripts.compute_taste import load_taste_profile
 from retrieval.models import MovieHit

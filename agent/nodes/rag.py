@@ -39,7 +39,6 @@ def _build_rag_tools(
     exclude from the seed-similarity retrieval path (AC-6). When None or empty,
     no extra exclusion is applied (today's behaviour).
     """
-    from ingestion.models import TasteProfile  # local import avoids circular at module level
 
     from retrieval.models import MovieFilters  # local import
 

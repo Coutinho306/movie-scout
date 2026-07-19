@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from eval.golden import GoldenQuery, GoldenSet
+from eval.golden import GoldenSet
 from eval.diagnostic.tiers import (
     DiagnosticSuite,
     PopularityTier,

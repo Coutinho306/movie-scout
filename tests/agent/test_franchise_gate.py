@@ -6,9 +6,8 @@ Covers AC-2, AC-3, AC-6, AC-7, AC-8.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from agent.config import AgentSettings
 from agent.main import run

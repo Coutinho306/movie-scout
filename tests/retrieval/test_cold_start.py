@@ -7,7 +7,6 @@ with no FileNotFoundError and taste ignored.
 from __future__ import annotations
 
 from retrieval.models import MovieHit
-from retrieval.taste import score_against_taste, score_against_taste_with_vectors
 from agent.tools.taste_matcher import match_taste_tool
 
 
@@ -43,7 +42,6 @@ def test_match_taste_tool_cold_start_returns_retrieval_order() -> None:
 
 def test_match_taste_tool_cold_start_no_file_error(tmp_path) -> None:
     """Cold start must not raise FileNotFoundError even when taste_profile.json is absent."""
-    import os
 
     # Ensure we're not looking at any data/ directory with taste_profile.json
     hits = [_make_hit(10, 0.8), _make_hit(20, 0.6)]

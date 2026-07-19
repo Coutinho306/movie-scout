@@ -16,7 +16,6 @@ from agent.tools.franchise import (
     detect_franchise_ambiguity,
     resolve_clarification,
 )
-from agent.tools.seed_film import _extract_seed_title_via_llm
 
 
 # ---------------------------------------------------------------------------

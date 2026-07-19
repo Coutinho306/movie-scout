@@ -33,7 +33,7 @@ load_dotenv()
 from agent.tools.query_mode import classify_query_mode
 from eval.diagnostic.build_suite import build_diagnostic_suite
 from eval.diagnostic.configs import CONFIGS, DiagnosticConfig
-from eval.diagnostic.tiers import DiagnosticSuite, TierQuery
+from eval.diagnostic.tiers import DiagnosticSuite
 from eval.metrics.retrieval import mrr, ndcg_at_k, recall_at_k
 from ingestion.config import Settings as IngestionSettings
 from retrieval.config import RetrievalSettings

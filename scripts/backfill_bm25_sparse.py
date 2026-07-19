@@ -57,7 +57,6 @@ from qdrant_client.models import (
     SparseVector,
     SparseVectorParams,
     VectorParams,
-    models,
 )
 
 from ingestion.chunking import build_sparse_text

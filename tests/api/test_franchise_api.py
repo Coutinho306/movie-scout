@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-import pytest
 from fastapi.testclient import TestClient
 from slowapi import Limiter
 
@@ -17,7 +16,6 @@ from agent.state import AgentRunResult, RecItem
 from api.dependencies import get_agent_run_fn, get_agent_settings, get_pg_pool
 import api.fastapi_app as fastapi_app
 from api.fastapi_app import create_app
-from api.config import ApiSettings
 
 
 # ---------------------------------------------------------------------------

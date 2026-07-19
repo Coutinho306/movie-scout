@@ -10,13 +10,12 @@ from __future__ import annotations
 import io
 import zipfile
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from ingestion.models import TasteProfile
 from retrieval.taste_upload import (
-    ResolutionReport,
     TasteUploadResult,
     _point_id,
     build_taste_profile_from_upload,

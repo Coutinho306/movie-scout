@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from ingestion.resources.tmdb_movies import _process_movie, load_tmdb_movies
 
@@ -360,7 +359,6 @@ def test_workers_reaches_thread_pool_executor() -> None:
 def test_no_new_runtime_dependency() -> None:
     """concurrent.futures and threading are stdlib — no new pyproject.toml dep needed."""
     import importlib
-    import sys
 
     # These must import without error from stdlib.
     importlib.import_module("concurrent.futures")

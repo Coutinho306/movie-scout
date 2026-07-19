@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from retrieval.config import RetrievalSettings
 from retrieval.models import MovieFilters, MovieHit

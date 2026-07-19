@@ -9,12 +9,11 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from retrieval.config import RetrievalSettings
-from retrieval.models import MovieFilters, MovieHit
+from retrieval.models import MovieFilters
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ class TestBuildFilterCast:
 
     def test_cast_filter_multi_actor(self) -> None:
         """_build_filter supports multiple actors via MatchAny."""
-        from qdrant_client.models import FieldCondition, MatchAny
+        from qdrant_client.models import FieldCondition
 
         from retrieval.movies import _build_filter
 
@@ -330,7 +329,6 @@ class TestFindByExactTitle:
 class TestEnsureCollectionsCastIndex:
     def test_creates_cast_payload_index(self) -> None:
         """ensure_collections must call create_payload_index for 'cast' KEYWORD."""
-        from qdrant_client.models import PayloadSchemaType
 
         from ingestion.pipeline import ensure_collections
         from ingestion.config import Settings

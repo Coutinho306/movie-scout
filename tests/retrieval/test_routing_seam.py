@@ -6,9 +6,8 @@ extract_actor_name, search_tmdb) so no network or model calls are made.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from retrieval.config import RetrievalSettings
 from retrieval.models import MovieHit

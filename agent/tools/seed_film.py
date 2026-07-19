@@ -80,7 +80,8 @@ def _extract_seed_title_via_llm(query: str) -> str | None:
             temperature=0.0,
         )
         title = (response.choices[0].message.content or "").strip()
-    except Exception:  # noqa: BLE001 — API failure must not crash the gate
+    except Exception as exc:  # noqa: BLE001 — API failure must not crash the gate
+        logger.warning("Seed-title LLM extraction failed for query %r: %s", query, exc)
         return None
     return title if title and title.upper() != "NONE" else None
 

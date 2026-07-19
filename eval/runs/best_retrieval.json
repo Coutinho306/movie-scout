@@ -7,8 +7,8 @@
   "rerank": false,
   "mean_precision_at_k": 0.027586206896551727,
   "mean_recall_at_k": 0.13793103448275862,
-  "mean_mrr": 0.11494252873563218,
-  "mean_ndcg_at_k": 0.1206896551724138,
-  "latency_p50_ms": 2130.6,
+  "mean_mrr": 0.13793103448275862,
+  "mean_ndcg_at_k": 0.13793103448275862,
+  "latency_p50_ms": 2292.3,
   "cost_usd": 0.0
 }

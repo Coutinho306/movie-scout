@@ -39,7 +39,7 @@ def _run_config(cfg: dict, golden: GoldenSet) -> dict:
         top_k=cfg["top_k"],
         hybrid=cfg["hybrid"],
         query_rewrite=cfg["query_rewrite"],
-        rerank=cfg["rerank"],
+        rerank=cfg.get("rerank", False),
     )
     # Pin the query embedder + collection to the variant's ingestion config so the
     # query embeds in the SAME vector space as the stored points. Without this a

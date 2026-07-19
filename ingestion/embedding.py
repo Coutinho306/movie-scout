@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import openai
+from openai import APIStatusError
 
 if TYPE_CHECKING:
     from ingestion.config import Settings
 
 _logger = logging.getLogger(__name__)
+
+# Retry policy for transient OpenAI errors (429 rate-limit and 5xx server errors).
+# Mirrors the pattern in ingestion/theme_extraction.py and ingestion/resources/tmdb_movies.py.
+_MAX_ATTEMPTS = 5
+_BACKOFF_BASE = 2.0
 
 
 @runtime_checkable
@@ -40,7 +47,7 @@ class OpenAIEmbedder:
         results: list[list[float]] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            response = self._get_client().embeddings.create(input=batch, model=self.model)
+            response = self._embed_batch_with_retry(batch)
             tokens = response.usage.total_tokens
             cost = tokens / 1000 * 0.00002
             _logger.info(
@@ -51,6 +58,34 @@ class OpenAIEmbedder:
             )
             results.extend(item.embedding for item in response.data)
         return results
+
+    def _embed_batch_with_retry(self, batch: list[str]) -> object:
+        """Call embeddings.create with bounded retry on 429 and 5xx errors.
+
+        Retryable: HTTP 429 (rate limit) and 5xx (transient server errors).
+        Non-retryable: other 4xx (bad request, auth) — propagate immediately.
+        On exhaustion re-raises the last error (never returns partial/empty data).
+        """
+        last_exc: APIStatusError | None = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                return self._get_client().embeddings.create(input=batch, model=self.model)
+            except APIStatusError as exc:
+                retryable = exc.status_code == 429 or exc.status_code >= 500
+                if retryable and attempt < _MAX_ATTEMPTS:
+                    wait_s = _BACKOFF_BASE * (2 ** (attempt - 1))
+                    _logger.warning(
+                        '{"step":"embed_retry","attempt":%d,"status":%d,"wait_s":%.1f}',
+                        attempt,
+                        exc.status_code,
+                        wait_s,
+                    )
+                    time.sleep(wait_s)
+                    last_exc = exc
+                    continue
+                raise
+        # Unreachable — last iteration always raises; satisfies type checker.
+        raise last_exc  # type: ignore[misc]
 
     def embed_single(self, text: str) -> list[float]:
         return self.embed_texts([text])[0]

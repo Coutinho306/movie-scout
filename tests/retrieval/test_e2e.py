@@ -1,4 +1,4 @@
-"""End-to-end smoke test: all retrieval primitives with rerank+rewrite enabled.
+"""End-to-end smoke test: all retrieval primitives with query_rewrite+hybrid enabled.
 
 Note on hybrid: search_movies supports hybrid (restored in specs/0009);
 search_reviews is dense-only (tmdb_reviews has no sparse field). This test
@@ -12,7 +12,6 @@ from pathlib import Path
 from ingestion.scripts.compute_taste import load_taste_profile
 from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
-from retrieval.rerank import cross_encode_rerank
 from retrieval.rewrite import rewrite_query
 from retrieval.reviews import search_reviews
 from retrieval.taste import score_against_taste
@@ -45,8 +44,3 @@ def test_full_retrieval_pipeline() -> None:
         assert len(taste_hits) == len(movie_hits)
         scores = [h.blended_score for h in taste_hits]
         assert scores == sorted(scores, reverse=True)
-
-    # 5. reranking
-    if review_hits:
-        reranked = cross_encode_rerank(query, review_hits)
-        assert len(reranked) == len(review_hits)

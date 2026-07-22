@@ -239,9 +239,7 @@ def search_movies(
     ingestion = settings.ingestion()
     collection = ingestion.movies_collection
     limit = k if k is not None else settings.top_k
-    # When reranking, fetch a wider candidate pool so the cross-encoder has real
-    # candidates to promote. Cap at 30 to bound model cost on large-k requests.
-    fetch_limit = min(limit * 3, 30) if settings.rerank else limit
+    fetch_limit = limit
     embedder = get_embedder(ingestion)
 
     if settings.query_rewrite:
@@ -326,13 +324,6 @@ def search_movies(
     # support MatchExcept reliably, so we filter in Python.
     if filters and filters.exclude_tmdb_ids:
         hits = [h for h in hits if h.tmdb_id not in filters.exclude_tmdb_ids]
-
-    # Cross-encoder reranking over the widened pool, then truncate to k.
-    # Lazy import keeps model load out of the off-path (no import when rerank=False).
-    if settings.rerank:
-        from retrieval.rerank import cross_encode_rerank
-
-        hits = cross_encode_rerank(query, hits)[:limit]
 
     return hits
 

@@ -10,7 +10,6 @@ from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
 from retrieval.reviews import search_reviews
 from retrieval.taste import score_against_taste
-from retrieval.rerank import cross_encode_rerank
 from retrieval.rewrite import rewrite_query
 
 settings = RetrievalSettings(top_k=10, hybrid=False, query_rewrite=False)
@@ -26,9 +25,6 @@ reviews = search_reviews(query, settings=settings)
 
 # Blend with taste profile
 movies = score_against_taste(movies)   # loads data/taste_profile.json automatically
-
-# Rerank by cross-encoder
-reviews = cross_encode_rerank(query, reviews)
 ```
 
 ## Flag matrix
@@ -58,4 +54,3 @@ reviews = cross_encode_rerank(query, reviews)
 - `exclude_tmdb_ids` in `MovieFilters` is applied in Python post-fetch (Qdrant
   KEYWORD index on integer tmdb_id doesn't support MatchExcept reliably).
 - `rewrite_query` caches results per (query, model) for the process lifetime.
-- Cross-encoder model loads once per process via `functools.lru_cache`.

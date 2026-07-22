@@ -68,11 +68,7 @@ def _run_query(
 ) -> tuple[list[int], list[int]]:
     """Return (top10_ids, top50_ids) for a single query under a config.
 
-    All configs — including rerank ones — issue one `search_movies` call at
-    k=50 and slice to 10. Rerank configs set `settings.rerank=True` in
-    `settings_kwargs`, so `search_movies` applies its own `min(k*3, 30)`
-    fetch-widening and `cross_encode_rerank` internally before this function
-    ever sees the hits; there is no separate diagnostic-only rerank path.
+    All configs issue one `search_movies` call at k=50 and slice to 10.
 
     When ``cfg.route_hybrid=True``, the per-query hybrid flag is derived from
     ``classify_query_mode(query_text)`` rather than the fixed

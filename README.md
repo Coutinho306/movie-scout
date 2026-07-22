@@ -130,6 +130,45 @@ Additional flags:
 - `--rebuild` — drop and recreate this variant's collections before loading.
 - `--drop-variant` — delete this variant's collections and exit.
 
+## Retrieval layers
+
+`retrieval/movies.py` supports independent knobs (`retrieval/config.py`) on
+top of plain dense vector search:
+
+| Knob | What it does | Layer it changes | Shipped default | Why |
+|---|---|---|---|---|
+| `query_rewrite` | HyDE: generates a hypothetical answer, embeds it, blends with the raw query vector before search (`retrieval/hyde.py`). | Query embedding, before retrieval. | **`True`** (on) | Wins the grid outright: +0.027–0.043 nDCG in every config it's paired with. The only knob that consistently helps as a static default. |
+| `hybrid` | Fuses dense (vector) search with BM25 lexical search via Qdrant RRF, instead of dense-only. | Candidate retrieval (replaces the single dense query). | **Routed dynamically**, not a static default (see below) | A fixed on/off setting loses on the golden set's query mix, but the agent doesn't use a fixed setting — see next paragraph. |
+| `top_k` | How many results are returned/considered. | Result-list size, both ends. | `10` | Grid tests 5 vs 10; ties on nDCG at the winning config, so left at the higher-recall value. |
+
+**Hybrid search is smart-routed, not a static flag.** The static `hybrid`
+default in `retrieval/config.py` is `False` and that's what the CLI/grid tools
+use unless told otherwise, but the agent's real search tool
+(`agent/tools/vector_search_movies.py:56`) doesn't read that static default —
+it calls `classify_query_mode(query)` per query and turns hybrid on only for
+queries that look like genre/cast/mood lookups, off for exact-title or
+abstract queries. The 120-query tiered diagnostic
+(`hybrid_search_eval.md`) shows why this routing exists: hybrid helps a lot on
+genre/cast-word queries (tier 2, +0.396 nDCG) but ties or dilutes on exact
+titles and abstract queries — so a query-aware router beats a fixed on/off
+setting, and that's what ships.
+
+**Re-ranking (cross-encoder) is evaluated but not shipped.** `retrieval/rerank.py`
++ the `rerank` flag are genuinely wired into `retrieval/movies.py`, and the
+diagnostic suite's rerank configs now go through the same production path
+(single reconciled pipeline — no more divergent diagnostic-only pool). Two
+models were measured: the original `ms-marco-MiniLM-L-6-v2` (long-passage
+relevance) and a candidate swap, `stsb-distilroberta-base` (short-text
+similarity, chosen to better match `title + overview`'s text shape). The swap
+did not help — it's net-worse on nDCG than the original model (−0.56 vs −0.53
+summed delta across 8 grid pairs), including at the best production config
+(`k10, dense, query_rewrite`), and slower. Full numbers and verdict in
+`eval/runs/rerank_eval.md`. Reranking stays **off by default**; the
+keep/route/remove decision (drop it, or route it query-aware like `hybrid`
+above) is deferred to a follow-up spike — the recall gap (~0.14 @k5), not
+model choice, looks like the real bottleneck reranking can't fix by
+reordering.
+
 ## Eval
 
 Offline evaluation grid-searches retrieval and LLM knobs against a ground-truth
@@ -143,6 +182,10 @@ decision is also logged in [`DECISIONS.md`](DECISIONS.md).
 Hybrid (dense + BM25) search evaluation — sparse-index enrichment,
 before/after nDCG@10 by query-difficulty tier — is documented in
 [`eval/runs/hybrid_search_eval.md`](eval/runs/hybrid_search_eval.md).
+
+Re-ranking evaluation — confirming the cross-encoder is genuinely wired (not
+a no-op) and an honest look at why it loses on this golden set — is
+documented in [`eval/runs/rerank_eval.md`](eval/runs/rerank_eval.md).
 
 ### Step 1 — run retrieval grid
 

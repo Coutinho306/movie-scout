@@ -68,6 +68,12 @@ eval/runs/*
 # reranker-wired grid (2026-07-19, adds rerank axis, 16 configs)
 !eval/runs/retrieval_20260719T031539.csv
 
+# rerank model-swap experiment (2026-07-21/22, old ms-marco vs new
+# stsb-distilroberta-base, same rerank=False baselines) — see rerank_eval.md
+!eval/runs/rerank_eval.md
+!eval/runs/retrieval_20260721T202044.csv
+!eval/runs/retrieval_20260722T055834.csv
+
 # planning (local only)
 specs/
 

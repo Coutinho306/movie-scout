@@ -1,14 +1,13 @@
 {
-  "config_id": "ret_002",
+  "config_id": "ret_001",
   "top_k": 5,
   "variant": "default",
   "hybrid": false,
   "query_rewrite": true,
-  "rerank": false,
   "mean_precision_at_k": 0.027586206896551727,
   "mean_recall_at_k": 0.13793103448275862,
-  "mean_mrr": 0.13793103448275862,
-  "mean_ndcg_at_k": 0.13793103448275862,
-  "latency_p50_ms": 2292.3,
+  "mean_mrr": 0.1206896551724138,
+  "mean_ndcg_at_k": 0.12520447426108475,
+  "latency_p50_ms": 2201.0,
   "cost_usd": 0.0
 }

@@ -5,9 +5,10 @@ Each ``DiagnosticConfig`` describes one retrieval path to evaluate:
 - ``hyde_blend_alpha`` (optional): if set, the runner sets ``HYDE_BLEND_ALPHA``
   in the environment before calling ``search_movies``.  If None and
   ``query_rewrite=True``, ``HYDE_BLEND_ALPHA`` is unset (pure HyDE).
-- ``rerank=True``: the runner fetches ``prefetch_k`` results then applies
-  ``cross_encode_rerank`` down to ``top_k``.  Do NOT rely on
-  ``settings.rerank`` — it is a dead flag in ``search_movies``.
+- Reranking is controlled by ``settings_kwargs["rerank"]=True``. This delegates
+  to ``search_movies`` which reads ``settings.rerank``, applies the production
+  ``min(k*3, 30)`` fetch-widening, and calls ``cross_encode_rerank`` internally.
+  ``settings.rerank`` has been live in ``search_movies`` since 2026-07-19.
 - ``route_hybrid=True``: per-query hybrid flag is set by
   ``classify_query_mode(query_text)`` instead of ``settings_kwargs["hybrid"]``.
 
@@ -30,10 +31,6 @@ class DiagnosticConfig:
     # None and query_rewrite=True => unset env var (pure HyDE).
     # Ignored when query_rewrite=False.
     hyde_blend_alpha: float | None = None
-    # Whether to apply cross_encode_rerank after fetching prefetch_k results.
-    rerank: bool = False
-    # How many results to fetch before reranking (ignored when rerank=False).
-    prefetch_k: int = 50
     # When True, the runner derives the per-query hybrid flag from
     # classify_query_mode(query_text) instead of settings_kwargs["hybrid"].
     # This enables the routed_hybrid config where each query's retrieval mode
@@ -67,15 +64,15 @@ CONFIGS: list[DiagnosticConfig] = [
     ),
     DiagnosticConfig(
         name="rerank_widened",
-        settings_kwargs={"hybrid": False, "query_rewrite": False},
-        rerank=True,
-        prefetch_k=50,
+        # rerank=True delegates to search_movies: min(k*3, 30) pool widening +
+        # cross_encode_rerank internally — the same production path as the grid.
+        # Pool size is 30 (not the old diagnostic-only 50); numbers from this
+        # config are NOT directly comparable to pre-reconciliation diagnostic runs.
+        settings_kwargs={"hybrid": False, "query_rewrite": False, "rerank": True},
     ),
     DiagnosticConfig(
         name="hyde_rerank",
-        settings_kwargs={"hybrid": False, "query_rewrite": True},
+        settings_kwargs={"hybrid": False, "query_rewrite": True, "rerank": True},
         hyde_blend_alpha=0.5,
-        rerank=True,
-        prefetch_k=50,
     ),
 ]

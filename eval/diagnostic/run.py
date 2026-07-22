@@ -38,7 +38,6 @@ from eval.metrics.retrieval import mrr, ndcg_at_k, recall_at_k
 from ingestion.config import Settings as IngestionSettings
 from retrieval.config import RetrievalSettings
 from retrieval.movies import search_movies
-from retrieval.rerank import cross_encode_rerank
 
 logger = logging.getLogger(__name__)
 
@@ -86,15 +85,9 @@ def _run_query(
     else:
         effective_settings = settings
 
-    if cfg.rerank:
-        pool = search_movies(query_text, settings=effective_settings, k=cfg.prefetch_k)
-        top50_ids = [h.tmdb_id for h in pool[:50]]
-        reranked = cross_encode_rerank(query_text, pool)
-        top10_ids = [h.tmdb_id for h in reranked[:10]]
-    else:
-        hits50 = search_movies(query_text, settings=effective_settings, k=50)
-        top50_ids = [h.tmdb_id for h in hits50]
-        top10_ids = top50_ids[:10]
+    hits50 = search_movies(query_text, settings=effective_settings, k=50)
+    top50_ids = [h.tmdb_id for h in hits50]
+    top10_ids = top50_ids[:10]
 
     return top10_ids, top50_ids
 

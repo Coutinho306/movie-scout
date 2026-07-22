@@ -12,7 +12,9 @@ _logger = logging.getLogger(__name__)
 
 Hit = Union[MovieHit, ReviewHit]
 
-_DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# STS-B cross-encoder: trained on short sentence-pair similarity — same text
+# shape as title+overview — rather than long MS-MARCO web query→passage pairs.
+_DEFAULT_MODEL = "cross-encoder/stsb-distilroberta-base"
 
 
 @functools.lru_cache(maxsize=4)

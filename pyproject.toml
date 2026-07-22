@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 # CPU-only torch — the default wheel bundles ~2.7 GB of NVIDIA CUDA libs we don't
-# use (cross-encoder rerank runs on CPU). Cuts the API/ingest images by ~2.7 GB.
+# use (LocalEmbedder's SentenceTransformer runs on CPU). Cuts the API/ingest images by ~2.7 GB.
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 

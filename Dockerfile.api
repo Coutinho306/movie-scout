@@ -21,9 +21,6 @@ COPY retrieval/ ./retrieval/
 COPY ingestion/ ./ingestion/
 COPY data/taste_profile.json ./data/taste_profile.json
 
-# Preload the cross-encoder rerank model so the first request isn't slow.
-RUN uv run python3 -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
-
 EXPOSE 8000
 # --no-sync: env already frozen-synced at build; avoid a runtime re-sync.
 CMD ["uv", "run", "--no-sync", "uvicorn", "api.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -6,6 +6,10 @@ than the old `ms-marco-MiniLM-L-6-v2` on net nDCG delta, worse at the best
 production config, and slower. Reranking stays **off by default**; keep/route/
 remove is deferred to a follow-up spike (see Takeaway).
 
+**Update (spec 0020, 2026-07-22):** P1-A (removal) was executed — the cross-encoder
+path and `retrieval/rerank.py` have been deleted. This file is preserved as the
+historical record of the experiments that informed that decision.
+
 **Question:** does swapping to a cross-encoder trained on short, symmetric
 text pairs (STS-B) — rather than long web-passage relevance (MS-MARCO) — fix
 reranking's off-distribution problem on this corpus's short `title + overview`

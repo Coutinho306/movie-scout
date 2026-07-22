@@ -36,10 +36,10 @@ docker compose up -d                                  # or: make up
 make eval
 ```
 
-Images (CPU-only torch — no CUDA): `Dockerfile.api` ~3.1 GB (backend + rerank
-model preloaded), `Dockerfile.frontend` ~780 MB (slim — Streamlit only, no
-agent/torch), `Dockerfile.ingest` ~2.75 GB (one-shot embedding job). The API/ingest
-bulk is CPU PyTorch + transformers for the cross-encoder reranker.
+Images (CPU-only torch — no CUDA): `Dockerfile.api` ~2.75 GB (backend),
+`Dockerfile.frontend` ~780 MB (slim — Streamlit only, no agent/torch),
+`Dockerfile.ingest` ~2.75 GB (one-shot embedding job). The API/ingest bulk
+is CPU PyTorch + sentence-transformers for the local embedder (`LocalEmbedder`).
 
 `QDRANT_URL` / `QDRANT_API_KEY` are required either way. Point them at the
 local container (`http://localhost:6333`, empty key) for development, or at a
@@ -153,21 +153,12 @@ genre/cast-word queries (tier 2, +0.396 nDCG) but ties or dilutes on exact
 titles and abstract queries — so a query-aware router beats a fixed on/off
 setting, and that's what ships.
 
-**Re-ranking (cross-encoder) is evaluated but not shipped.** `retrieval/rerank.py`
-+ the `rerank` flag are genuinely wired into `retrieval/movies.py`, and the
-diagnostic suite's rerank configs now go through the same production path
-(single reconciled pipeline — no more divergent diagnostic-only pool). Two
-models were measured: the original `ms-marco-MiniLM-L-6-v2` (long-passage
-relevance) and a candidate swap, `stsb-distilroberta-base` (short-text
-similarity, chosen to better match `title + overview`'s text shape). The swap
-did not help — it's net-worse on nDCG than the original model (−0.56 vs −0.53
-summed delta across 8 grid pairs), including at the best production config
-(`k10, dense, query_rewrite`), and slower. Full numbers and verdict in
-`eval/runs/rerank_eval.md`. Reranking stays **off by default**; the
-keep/route/remove decision (drop it, or route it query-aware like `hybrid`
-above) is deferred to a follow-up spike — the recall gap (~0.14 @k5), not
-model choice, looks like the real bottleneck reranking can't fix by
-reordering.
+**Re-ranking (cross-encoder) was removed.** Two models were measured — the
+original `ms-marco-MiniLM-L-6-v2` and a short-text candidate swap
+`stsb-distilroberta-base` — and both were a net loss on nDCG across every
+query bucket. The real bottleneck is a recall gap (~0.14 @k5): the right
+films are frequently not in the candidate pool, so reordering cannot help.
+Full numbers and verdict are in [`eval/runs/rerank_eval.md`](eval/runs/rerank_eval.md).
 
 ## Eval
 
@@ -183,9 +174,9 @@ Hybrid (dense + BM25) search evaluation — sparse-index enrichment,
 before/after nDCG@10 by query-difficulty tier — is documented in
 [`eval/runs/hybrid_search_eval.md`](eval/runs/hybrid_search_eval.md).
 
-Re-ranking evaluation — confirming the cross-encoder is genuinely wired (not
-a no-op) and an honest look at why it loses on this golden set — is
-documented in [`eval/runs/rerank_eval.md`](eval/runs/rerank_eval.md).
+Re-ranking evaluation — two cross-encoder models measured against the golden
+set, both net loss; the decision to remove reranking is documented in
+[`eval/runs/rerank_eval.md`](eval/runs/rerank_eval.md).
 
 ### Step 1 — run retrieval grid
 
@@ -194,7 +185,7 @@ uv run python3 -m eval.cli retrieval
 ```
 
 Reads `eval/grids/retrieval.yaml` and runs every cartesian combination of
-`top_k`, `variant`, `hybrid`, `rerank`, and `query_rewrite`. Writes results to
+`top_k`, `variant`, `hybrid`, and `query_rewrite`. Writes results to
 `eval/runs/retrieval_<ts>.csv` and prints the winning config by `mean_ndcg_at_k`.
 The winner is saved to `eval/runs/best_retrieval.json` for the LLM grid.
 

@@ -69,13 +69,12 @@ def build_relevant_cluster(
 
     Membership criteria:
     - genre overlap >= 1 (hard prefilter)
-    - keyword Jaccard >= tau
+    - Jaccard similarity >= tau, computed over ``keywords`` when available, falling
+      back to ``genres`` when neither film has keywords populated
 
-    The seed is always included. Candidates are ranked by keyword overlap
+    The seed is always included. Candidates are ranked by overlap count
     descending, then popularity descending, then tmdb_id ascending (deterministic,
-    no RNG). The result is capped at n members; if the seed would otherwise be
-    excluded by the cap, it is force-included and the last non-seed member is
-    dropped.
+    no RNG). The result is capped at n members.
     """
     seed_id: int = seed_payload["tmdb_id"]
     seed_genres: set[str] = set(seed_payload.get("genres") or [])
@@ -94,18 +93,23 @@ def build_relevant_cluster(
             continue
 
         keywords: set[str] = set(movie.get("keywords") or [])
-        union = seed_keywords | keywords
-        if not union:
-            jaccard = 0.0
+
+        # Compute Jaccard: use keywords if either film has them, else fall back to genres
+        if seed_keywords or keywords:
+            union = seed_keywords | keywords
+            jaccard = len(seed_keywords & keywords) / len(union) if union else 0.0
+            overlap = len(seed_keywords & keywords)
         else:
-            jaccard = len(seed_keywords & keywords) / len(union)
+            # Neither film has keywords — use genre Jaccard as fallback
+            union = seed_genres | genres
+            jaccard = len(seed_genres & genres) / len(union) if union else 0.0
+            overlap = len(seed_genres & genres)
 
         if jaccard < tau:
             continue
 
         pop: float = float(movie.get("popularity") or 0.0)
-        # Sort key: keyword overlap desc, popularity desc, tmdb_id asc
-        overlap = len(seed_keywords & keywords)
+        # Sort key: overlap count desc, popularity desc, tmdb_id asc
         candidates.append((-overlap, -pop, mid, idx))
 
     candidates.sort()
@@ -116,9 +120,7 @@ def build_relevant_cluster(
             break
         cluster.add(mid)
 
-    # Seed always present — if cap was hit and seed wasn't in the top N, force it
-    # (seed was excluded from the candidate loop, so it's always added above as
-    # the initial singleton before the cap logic; this is a no-op guard)
+    # Seed always present — guard (seed was pre-added as the initial singleton)
     cluster.add(seed_id)
 
     return cluster
@@ -193,13 +195,94 @@ def _generate_queries(
     return queries
 
 
+def enrich_golden_set_with_clusters(
+    golden: GoldenSet,
+    corpus: list[dict] | None = None,
+    *,
+    tau: float = 0.2,
+    n: int = 6,
+) -> GoldenSet:
+    """Enrich an existing GoldenSet by widening each query's target_tmdb_ids to a cluster.
+
+    Each existing query's first target id is treated as the seed; the corpus is
+    scrolled once (if not pre-loaded) and ``build_relevant_cluster`` is called for
+    each seed. The LLM query text and holdout set are preserved unchanged.
+
+    This is useful when TMDB API or LLM calls are unavailable (e.g., expired API key)
+    and an existing cached golden set needs its cluster membership updated.
+    """
+    if corpus is None:
+        corpus = _scroll_corpus()
+
+    corpus_by_id: dict[int, dict] = {
+        m["tmdb_id"]: m for m in corpus if m.get("tmdb_id") is not None
+    }
+
+    enriched_queries: list[GoldenQuery] = []
+    for gq in golden.queries:
+        # Treat the first id in target_tmdb_ids as the canonical seed
+        seed_id = next(iter(sorted(gq.target_tmdb_ids)))
+        seed_payload = corpus_by_id.get(seed_id)
+        if seed_payload is None:
+            # Seed not in corpus — keep singleton
+            enriched_queries.append(gq)
+            continue
+
+        cluster = build_relevant_cluster(seed_payload, corpus, tau=tau, n=n)
+
+        # Rebuild target_titles: seed title first, then cluster member titles
+        seed_title = gq.target_titles[0] if gq.target_titles else str(seed_id)
+        cluster_titles = [seed_title]
+        for mid in sorted(cluster - {seed_id}):
+            if mid in corpus_by_id:
+                cluster_titles.append(corpus_by_id[mid].get("title", str(mid)))
+
+        enriched_queries.append(
+            GoldenQuery(
+                text=gq.text,
+                target_tmdb_ids=cluster,
+                target_titles=cluster_titles,
+            )
+        )
+
+    return GoldenSet(
+        holdout_tmdb_ids=golden.holdout_tmdb_ids,
+        queries=enriched_queries,
+    )
+
+
 def build_golden_set(force: bool = False) -> GoldenSet:
-    """Build (or load cached) GoldenSet from watchlist.csv."""
+    """Build (or load cached) GoldenSet from watchlist.csv.
+
+    When ``force=True`` and a cached golden set already exists, the function
+    performs a cluster-enrichment pass: it scrolls the Qdrant corpus and
+    widens each query's ``target_tmdb_ids`` to a genre-based cluster (using
+    ``enrich_golden_set_with_clusters``). This avoids re-running expensive
+    TMDB API lookups and LLM query generation when only the cluster membership
+    needs refreshing.
+
+    A full rebuild (TMDB + LLM) is triggered only when no cache exists.
+    """
     if not force and GOLDEN_CACHE.exists():
         logger.info("Loading golden set from cache: %s", GOLDEN_CACHE)
         data = json.loads(GOLDEN_CACHE.read_text())
         return GoldenSet.model_validate(data)
 
+    if force and GOLDEN_CACHE.exists():
+        # Enrich-only pass: preserve existing tmdb_ids and query text; rebuild clusters
+        logger.info("Enriching golden set with multi-relevant clusters: %s", GOLDEN_CACHE)
+        existing = GoldenSet.model_validate(json.loads(GOLDEN_CACHE.read_text()))
+        corpus = _scroll_corpus()
+        enriched = enrich_golden_set_with_clusters(existing, corpus)
+        GOLDEN_CACHE.write_text(enriched.model_dump_json())
+        logger.info(
+            "Golden set enriched: %d queries, mean cluster %.2f",
+            len(enriched.queries),
+            sum(len(q.target_tmdb_ids) for q in enriched.queries) / max(len(enriched.queries), 1),
+        )
+        return enriched
+
+    # Full rebuild: TMDB id resolution + LLM query generation + clustering
     settings = _EvalSettings()
     watchlist = pd.read_csv(WATCHLIST_CSV)
     logger.info("Resolving TMDB ids for %d watchlist films", len(watchlist))

@@ -164,6 +164,7 @@ def test_payload_shape_is_unchanged() -> None:
     expected_keys = {
         "tmdb_id", "title", "year", "genres", "cast", "director",
         "overview", "tagline", "runtime", "vote_average", "popularity", "themes",
+        "keywords",
     }
     tmdb_id = 680
     meta = _make_metadata(tmdb_id)

@@ -220,10 +220,10 @@ def _process_movie(
         # The client tokenises the Document locally via fastembed; the server
         # stores the sparse vector and applies IDF at query time.
         # Sparse text is built via the shared build_sparse_text (enriched-base
-        # recipe: title, year, genres, director, cast top-5, tagline, overview;
-        # no keywords clause).  Using the shared builder here and in the
-        # backfill script is the drift guard — both call sites are bound to
-        # the same function so the recipes cannot diverge silently.
+        # recipe: title, year, genres, director, cast top-5, tagline, overview,
+        # keywords).  Using the shared builder here and in the backfill script
+        # is the drift guard — both call sites are bound to the same function
+        # so the recipes cannot diverge silently.
         _sparse_text = build_sparse_text(
             title=metadata.title,
             year=metadata.year,
@@ -232,6 +232,7 @@ def _process_movie(
             cast=metadata.cast,
             tagline=metadata.tagline,
             overview=metadata.overview,
+            keywords=metadata.keywords,
         )
         vector: dict | list = {
             "": dense_vector,
@@ -259,6 +260,7 @@ def _process_movie(
                     "vote_average": metadata.vote_average,
                     "popularity": metadata.popularity,
                     "themes": metadata.themes,
+                    "keywords": metadata.keywords,
                 },
             )
         ],

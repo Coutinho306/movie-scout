@@ -66,6 +66,7 @@ def ensure_collections(client: QdrantClient, settings: Settings) -> None:
     client.create_payload_index(movies_col, "vote_average", PayloadSchemaType.FLOAT)
     client.create_payload_index(movies_col, "cast", PayloadSchemaType.KEYWORD)
     client.create_payload_index(movies_col, "title", PayloadSchemaType.KEYWORD)
+    client.create_payload_index(movies_col, "keywords", PayloadSchemaType.KEYWORD)
 
     if reviews_col not in existing:
         client.create_collection(

@@ -74,6 +74,10 @@ eval/runs/*
 !eval/runs/retrieval_20260721T202044.csv
 !eval/runs/retrieval_20260722T055834.csv
 
+# rerank re-test against multi-relevant golden set (2026-07-23, spec 0021)
+!eval/runs/rerank_retest_multirelevant.md
+!eval/runs/rerank_retest_results.json
+
 # planning (local only)
 specs/
 

@@ -81,6 +81,14 @@ def _build_filter(filters: MovieFilters | None) -> Filter | None:
             )
         )
 
+    if filters.keywords:
+        conditions.append(
+            FieldCondition(
+                key="keywords",
+                match=MatchAny(any=filters.keywords),
+            )
+        )
+
     if filters.vote_min is not None:
         conditions.append(
             FieldCondition(

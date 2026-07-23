@@ -90,13 +90,17 @@ def build_sparse_text(
     cast: list[str],
     tagline: str,
     overview: str,
+    keywords: list[str] | None = None,
 ) -> str:
     """Return the enriched-base sparse text (drift-guard canonical source).
 
-    Emits the same fields as ``build_movie_embed_text(..., recipe="base")`` —
-    title, year, genres, director, cast (top-5), tagline, overview — with no
-    keywords clause.  Both the fresh-ingest sparse ``Document`` and the
-    enriched backfill call this function so the recipes cannot drift.
+    Emits title, year, genres, director, cast (top-5), tagline, overview, and
+    — when ``keywords`` is non-empty — a ``Keywords: ...`` clause mirroring
+    ``_build_keywords_text`` so dense and sparse keyword handling do not diverge.
+    Default ``None`` keeps existing callers valid.
+
+    Both the fresh-ingest sparse ``Document`` and the sparse backfill script
+    call this function so the recipes cannot drift.
 
     Accepts flat fields (not a ``TmdbMovieMetadata``) so the backfill script
     can call it directly from the Qdrant payload without constructing a model
@@ -104,7 +108,7 @@ def build_sparse_text(
     """
     genres_str = ", ".join(genres)
     cast_str = ", ".join(cast[:5])  # top-5, matching the dense base recipe
-    return (
+    text = (
         f"{title} ({year}). "
         f"Genres: {genres_str}. "
         f"Director: {director}. "
@@ -112,3 +116,6 @@ def build_sparse_text(
         f"{tagline}. "
         f"{overview}"
     )
+    if keywords:
+        text += f" Keywords: {', '.join(keywords)}."
+    return text

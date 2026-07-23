@@ -1,7 +1,8 @@
 """Backfill BM25 sparse vectors onto every point in the ``tmdb_movies`` collection.
 
-Sparse text recipe: ``enriched-base`` — title, year, genres, director, cast (top-5),
-tagline, overview.  Matches the dense ``base`` recipe minus keywords.  Built via
+Sparse text recipe: ``enriched-base-kw`` — title, year, genres, director, cast (top-5),
+tagline, overview, keywords.  Extends the former ``enriched-base`` recipe with a
+``Keywords: ...`` clause (spec 0022 Phase 3).  Built via
 ``ingestion.chunking.build_sparse_text`` (the shared drift-guard builder).
 
 No OpenAI calls, no dense re-embedding — ``update_vectors`` is used so the dense
@@ -73,10 +74,12 @@ _DENSE_SIZE = 1536
 
 # Enriched sparse text recipe version tag (AC-3).
 # Changing this constant causes a re-run to rewrite all points again.
-_SPARSE_TEXT_RECIPE = "enriched-base"
+# Bumped from "enriched-base" to "enriched-base-kw" to force full reindex
+# after the keywords clause was added to build_sparse_text (spec 0022 Phase 3).
+_SPARSE_TEXT_RECIPE = "enriched-base-kw"
 
 # Payload fields fetched during enriched-recipe scroll.
-_ENRICHED_PAYLOAD_FIELDS = ["title", "year", "genres", "cast", "director", "tagline", "overview"]
+_ENRICHED_PAYLOAD_FIELDS = ["title", "year", "genres", "cast", "director", "tagline", "overview", "keywords"]
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +281,8 @@ def backfill(client: QdrantClient) -> dict[str, int]:
             director: str = (p.get("director") or "").strip()
             tagline: str = (p.get("tagline") or "").strip()
             overview: str = (p.get("overview") or "").strip()
+            # Read keywords from the now-backfilled payload (Phase 2 must run first).
+            keywords: list[str] = p.get("keywords") or []
 
             text = build_sparse_text(
                 title=title,
@@ -287,6 +292,7 @@ def backfill(client: QdrantClient) -> dict[str, int]:
                 cast=cast,
                 tagline=tagline,
                 overview=overview,
+                keywords=keywords if keywords else None,
             ).strip()
 
             if not text:

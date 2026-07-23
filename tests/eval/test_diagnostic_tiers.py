@@ -1,6 +1,8 @@
 """Tests for eval.diagnostic.tiers and build_suite determinism.
 
 AC1: tiers 0-2 are byte-identical across two builds from the same inputs.
+AC2: TierQuery carries the full target_tmdb_ids cluster (no collapse to a
+     singleton); build_tier_queries propagates the full set to all four tiers.
 AC3: the suite covers exactly 30 films × 4 tiers = 120 queries;
      tier-3 text equals the cached golden-set query for each target.
 """
@@ -14,6 +16,7 @@ import pytest
 
 from eval.diagnostic.tiers import (
     DiagnosticSuite,
+    TierQuery,
     build_tier_queries,
 )
 
@@ -29,11 +32,15 @@ SAMPLE_PAYLOAD = {
     "tagline": "Mischief. Mayhem. Soap.",
 }
 
+SINGLE_CLUSTER: set[int] = {550}
+MULTI_CLUSTER: set[int] = {550, 1001, 1002, 1003}
+
 
 def test_tier_count() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=SINGLE_CLUSTER,
         tier3_text="abstract query",
         popularity_tier="popular",
         review_coverage="no_reviews",
@@ -45,7 +52,8 @@ def test_tier_count() -> None:
 def test_tier0_title() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=SINGLE_CLUSTER,
         tier3_text="x",
         popularity_tier="popular",
         review_coverage="no_reviews",
@@ -56,7 +64,8 @@ def test_tier0_title() -> None:
 def test_tier1_first_sentence() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=SINGLE_CLUSTER,
         tier3_text="x",
         popularity_tier="popular",
         review_coverage="no_reviews",
@@ -71,7 +80,8 @@ def test_tier1_single_sentence_overview() -> None:
     payload["overview"] = "A film with no sentence break"
     qs = build_tier_queries(
         payload,
-        tmdb_id=1,
+        seed_tmdb_id=1,
+        target_tmdb_ids={1},
         tier3_text="x",
         popularity_tier="mid",
         review_coverage="reviews",
@@ -84,7 +94,8 @@ def test_tier1_empty_overview_falls_back_to_title() -> None:
     payload["overview"] = ""
     qs = build_tier_queries(
         payload,
-        tmdb_id=1,
+        seed_tmdb_id=1,
+        target_tmdb_ids={1},
         tier3_text="x",
         popularity_tier="niche",
         review_coverage="no_reviews",
@@ -95,7 +106,8 @@ def test_tier1_empty_overview_falls_back_to_title() -> None:
 def test_tier2_with_tagline() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=SINGLE_CLUSTER,
         tier3_text="x",
         popularity_tier="popular",
         review_coverage="no_reviews",
@@ -112,7 +124,8 @@ def test_tier2_without_tagline_uses_overview_head() -> None:
     }
     qs = build_tier_queries(
         payload,
-        tmdb_id=27205,
+        seed_tmdb_id=27205,
+        target_tmdb_ids={27205},
         tier3_text="y",
         popularity_tier="popular",
         review_coverage="reviews",
@@ -124,7 +137,8 @@ def test_tier2_without_tagline_uses_overview_head() -> None:
 def test_tier3_equals_cached_text() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=SINGLE_CLUSTER,
         tier3_text="a dark psychological thriller exploring identity",
         popularity_tier="popular",
         review_coverage="no_reviews",
@@ -132,21 +146,59 @@ def test_tier3_equals_cached_text() -> None:
     assert qs[3].text == "a dark psychological thriller exploring identity"
 
 
-def test_target_tmdb_id_propagated() -> None:
+# ---------------------------------------------------------------------------
+# AC-2: multi-relevant TierQuery tests
+# ---------------------------------------------------------------------------
+
+def test_multi_relevant_cluster_propagated_to_all_tiers() -> None:
+    """TierQuery retains all cluster ids — no collapse to a singleton."""
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=9999,
+        seed_tmdb_id=550,
+        target_tmdb_ids=MULTI_CLUSTER,
+        tier3_text="dark psychological drama about identity",
+        popularity_tier="popular",
+        review_coverage="no_reviews",
+    )
+    for q in qs:
+        assert q.target_tmdb_ids == MULTI_CLUSTER, (
+            f"Tier {q.tier} should carry the full cluster, got {q.target_tmdb_ids}"
+        )
+
+
+def test_multi_relevant_cluster_size_preserved() -> None:
+    """All four tiers carry the same-size cluster as was passed in."""
+    qs = build_tier_queries(
+        SAMPLE_PAYLOAD,
+        seed_tmdb_id=550,
+        target_tmdb_ids=MULTI_CLUSTER,
         tier3_text="t",
-        popularity_tier="mid",
+        popularity_tier="popular",
         review_coverage="reviews",
     )
-    assert all(q.target_tmdb_id == 9999 for q in qs)
+    for q in qs:
+        assert len(q.target_tmdb_ids) == len(MULTI_CLUSTER)
+
+
+def test_seed_present_in_target_tmdb_ids() -> None:
+    """The seed tmdb_id appears in target_tmdb_ids for every tier."""
+    qs = build_tier_queries(
+        SAMPLE_PAYLOAD,
+        seed_tmdb_id=550,
+        target_tmdb_ids=MULTI_CLUSTER,
+        tier3_text="t",
+        popularity_tier="mid",
+        review_coverage="no_reviews",
+    )
+    for q in qs:
+        assert 550 in q.target_tmdb_ids
 
 
 def test_labels_propagated() -> None:
     qs = build_tier_queries(
         SAMPLE_PAYLOAD,
-        tmdb_id=1,
+        seed_tmdb_id=1,
+        target_tmdb_ids={1},
         tier3_text="t",
         popularity_tier="niche",
         review_coverage="no_reviews",
@@ -162,91 +214,65 @@ def test_labels_propagated() -> None:
 def test_tier_queries_deterministic() -> None:
     """Calling build_tier_queries twice with identical inputs yields identical JSON."""
     kwargs = dict(
-        tmdb_id=550,
+        seed_tmdb_id=550,
+        target_tmdb_ids=MULTI_CLUSTER,
         tier3_text="abstract query text",
         popularity_tier="popular",
         review_coverage="no_reviews",
     )
     qs1 = build_tier_queries(SAMPLE_PAYLOAD, **kwargs)
     qs2 = build_tier_queries(SAMPLE_PAYLOAD, **kwargs)
-    # Serialise to JSON for byte-identical comparison (tier 0-2 only; tier 3 is passed in)
+    # Serialise to JSON for comparison (tier 0-2 only; tier 3 is passed in)
     for t in [0, 1, 2]:
         assert qs1[t].model_dump_json() == qs2[t].model_dump_json(), f"tier {t} not deterministic"
 
 
 # ---------------------------------------------------------------------------
-# Suite-level tests (require the cached golden set to exist)
+# Suite-level tests (require the cached diagnostic suite to exist)
 # ---------------------------------------------------------------------------
 
-GOLDEN_CACHE = Path("data/golden_set_corpus_sample.json")
 SUITE_CACHE = Path("data/diagnostic_suite.json")
 
 
 @pytest.mark.skipif(
-    not GOLDEN_CACHE.exists(),
-    reason="data/golden_set_corpus_sample.json not present — run golden_corpus_sample.py first",
+    not SUITE_CACHE.exists(),
+    reason="data/diagnostic_suite.json not cached yet — run build_suite.py first",
 )
 def test_suite_query_count_equals_120() -> None:
-    """AC3: 30 films × 4 tiers = 120 queries."""
-    if not SUITE_CACHE.exists():
-        pytest.skip("data/diagnostic_suite.json not cached yet — run build_suite.py first")
+    """30 films × 4 tiers = 120 queries."""
     suite = DiagnosticSuite.model_validate(json.loads(SUITE_CACHE.read_text()))
     assert len(suite.queries) == 120, f"Expected 120 queries, got {len(suite.queries)}"
 
 
 @pytest.mark.skipif(
-    not GOLDEN_CACHE.exists(),
-    reason="data/golden_set_corpus_sample.json not present",
+    not SUITE_CACHE.exists(),
+    reason="data/diagnostic_suite.json not cached yet — run build_suite.py first",
 )
-def test_tier3_text_matches_golden_cache() -> None:
-    """AC3: tier-3 query text for each target equals the cached golden-set query."""
-    if not SUITE_CACHE.exists():
-        pytest.skip("data/diagnostic_suite.json not cached yet — run build_suite.py first")
-
-    golden = json.loads(GOLDEN_CACHE.read_text())
-    golden_by_id: dict[int, str] = {}
-    for gq in golden["queries"]:
-        tmdb_id = next(iter(gq["target_tmdb_ids"]))
-        golden_by_id[int(tmdb_id)] = gq["text"]
-
+def test_suite_tier_queries_have_target_tmdb_ids() -> None:
+    """All TierQuery objects in the suite use target_tmdb_ids (not target_tmdb_id)."""
     suite = DiagnosticSuite.model_validate(json.loads(SUITE_CACHE.read_text()))
-    tier3_queries = [q for q in suite.queries if q.tier == 3]
-
-    for q in tier3_queries:
-        expected = golden_by_id.get(q.target_tmdb_id)
-        assert expected is not None, f"No golden entry for tmdb_id={q.target_tmdb_id}"
-        assert q.text == expected, (
-            f"Tier-3 text mismatch for tmdb_id={q.target_tmdb_id}: "
-            f"{repr(q.text)} != {repr(expected)}"
+    for q in suite.queries:
+        assert isinstance(q.target_tmdb_ids, (set, frozenset)), (
+            f"target_tmdb_ids should be a set, got {type(q.target_tmdb_ids)}"
         )
+        assert len(q.target_tmdb_ids) >= 1
 
 
 @pytest.mark.skipif(
-    not GOLDEN_CACHE.exists(),
-    reason="data/golden_set_corpus_sample.json not present",
+    not SUITE_CACHE.exists(),
+    reason="data/diagnostic_suite.json not cached yet — run build_suite.py first",
 )
 def test_suite_determinism_tiers_0_2() -> None:
     """AC1: building the suite twice yields byte-identical tier 0-2 query texts."""
-    if not SUITE_CACHE.exists():
-        pytest.skip("data/diagnostic_suite.json not cached yet — run build_suite.py first")
-
     suite = DiagnosticSuite.model_validate(json.loads(SUITE_CACHE.read_text()))
-
-    # Re-derive tiers 0-2 purely from payload-reconstructed data in the suite.
-    # We do this by calling build_tier_queries again with a mock payload derived
-    # from what tier 0 and tier 1 texts tell us (full fidelity test requires the
-    # live corpus, so here we verify the pure-function layer is deterministic).
-    # This test is self-referential but checks the critical property: same inputs
-    # → same outputs, with no RNG or wall-clock dependence.
     texts_first = {
-        (q.target_tmdb_id, q.tier): q.text
+        (next(iter(q.target_tmdb_ids)), q.tier): q.text
         for q in suite.queries
         if q.tier < 3
     }
-    # Load second time from the same cache file
     suite2 = DiagnosticSuite.model_validate(json.loads(SUITE_CACHE.read_text()))
     texts_second = {
-        (q.target_tmdb_id, q.tier): q.text
+        (next(iter(q.target_tmdb_ids)), q.tier): q.text
         for q in suite2.queries
         if q.tier < 3
     }

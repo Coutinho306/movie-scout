@@ -1,10 +1,10 @@
 """Assemble the 120-query DiagnosticSuite from the cached corpus golden set.
 
-Loads ``data/golden_set_corpus_sample.json`` (the 30-film stratified sample),
-fetches each target's full payload from ``tmdb_movies``, re-derives popularity
-tier (same percentile cutoffs as ``golden_corpus_sample.py``) and review
-coverage (``tmdb_reviews`` membership), builds tiers 0-2 mechanically and
-copies tier 3 from the cached LLM text.
+Loads ``data/golden_set_corpus_sample.json`` (the 30-film stratified corpus
+sample), fetches each target's full payload from ``tmdb_movies``, re-derives
+popularity tier from corpus-wide popularity percentiles, and review coverage
+from ``tmdb_reviews`` membership, builds tiers 0-2 mechanically and copies
+tier 3 from the cached LLM text.
 
 Usage::
 
@@ -42,7 +42,8 @@ SUITE_CACHE = Path("data/diagnostic_suite.json")
 _PROD_MOVIES_COLLECTION = "tmdb_movies"
 _PROD_REVIEWS_COLLECTION = "tmdb_reviews"
 
-# Percentile cutoffs — must mirror golden_corpus_sample.py exactly
+# Percentile cutoffs — derived from the live corpus, self-contained here.
+# These split the corpus into popular / mid / niche popularity tiers.
 _POPULAR_PERCENTILE = 0.95
 _MID_LOW_PERCENTILE = 0.50
 _MID_HIGH_PERCENTILE = 0.80
@@ -178,7 +179,7 @@ def build_diagnostic_suite(
     if not GOLDEN_CACHE.exists():
         raise FileNotFoundError(
             f"Golden corpus sample not found at {GOLDEN_CACHE}. "
-            "Run eval/golden_corpus_sample.py first."
+            "Build it with: uv run python3 -m eval.diagnostic.build_suite --force"
         )
     golden = GoldenSet.model_validate(json.loads(GOLDEN_CACHE.read_text()))
     logger.info('{"step":"golden_loaded","queries":%d}', len(golden.queries))
@@ -203,15 +204,17 @@ def build_diagnostic_suite(
     all_queries: list[TierQuery] = []
 
     for gq in golden.queries:
-        # Each GoldenQuery targets exactly one film in this golden set
-        tmdb_id = next(iter(gq.target_tmdb_ids))
+        # The seed is the first entry in target_titles; fetch its payload for
+        # tier-0/1/2 query text construction. The full target_tmdb_ids cluster
+        # is carried through unchanged to every TierQuery.
+        seed_tmdb_id = next(iter(gq.target_tmdb_ids))
         tier3_text = gq.text
 
-        payload = _fetch_target_payload(tmdb_id, movies_collection)
+        payload = _fetch_target_payload(seed_tmdb_id, movies_collection)
         if payload is None:
             logger.warning(
                 '{"step":"missing_payload","tmdb_id":%d,"title":"%s"}',
-                tmdb_id,
+                seed_tmdb_id,
                 gq.target_titles[0] if gq.target_titles else "unknown",
             )
             continue
@@ -225,12 +228,13 @@ def build_diagnostic_suite(
             lo_cut=lo_cut,
         )
         review_coverage: ReviewCoverage = (
-            "reviews" if tmdb_id in review_covered else "no_reviews"
+            "reviews" if seed_tmdb_id in review_covered else "no_reviews"
         )
 
         tier_queries = build_tier_queries(
             payload,
-            tmdb_id=tmdb_id,
+            seed_tmdb_id=seed_tmdb_id,
+            target_tmdb_ids=gq.target_tmdb_ids,
             tier3_text=tier3_text,
             popularity_tier=popularity_tier,
             review_coverage=review_coverage,
@@ -238,11 +242,12 @@ def build_diagnostic_suite(
         all_queries.extend(tier_queries)
 
         logger.debug(
-            '{"step":"film","tmdb_id":%d,"title":"%s","pop_tier":"%s","review":"%s"}',
-            tmdb_id,
+            '{"step":"film","tmdb_id":%d,"title":"%s","pop_tier":"%s","review":"%s","cluster_size":%d}',
+            seed_tmdb_id,
             payload.get("title", ""),
             popularity_tier,
             review_coverage,
+            len(gq.target_tmdb_ids),
         )
 
     suite = DiagnosticSuite(queries=all_queries)

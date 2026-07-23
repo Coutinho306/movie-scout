@@ -19,7 +19,7 @@ class TierQuery(BaseModel):
     """A single (tier, target) query entry in the diagnostic suite."""
 
     text: str
-    target_tmdb_id: int
+    target_tmdb_ids: set[int]
     tier: int  # 0, 1, 2, or 3
     popularity_tier: PopularityTier
     review_coverage: ReviewCoverage
@@ -64,7 +64,8 @@ def _tier2(payload: dict) -> str:
 def build_tier_queries(
     payload: dict,
     *,
-    tmdb_id: int,
+    seed_tmdb_id: int,
+    target_tmdb_ids: set[int],
     tier3_text: str,
     popularity_tier: PopularityTier,
     review_coverage: ReviewCoverage,
@@ -74,10 +75,15 @@ def build_tier_queries(
     Parameters
     ----------
     payload:
-        The film's stored Qdrant payload dict (must have at minimum ``title``,
-        ``overview``, ``genres``, ``tagline``).
-    tmdb_id:
-        The film's TMDB id.
+        The seed film's stored Qdrant payload dict (must have at minimum
+        ``title``, ``overview``, ``genres``, ``tagline``). Used for tier 0-2
+        query text construction only.
+    seed_tmdb_id:
+        The seed film's TMDB id. Used for payload fetch / tier-0/1/2 text;
+        distinct from the full relevance set carried in ``target_tmdb_ids``.
+    target_tmdb_ids:
+        The full set of relevant TMDB ids for this query (seed + cluster
+        members). Carried through to every TierQuery unchanged.
     tier3_text:
         The pre-cached LLM-generated abstract query for this film.
     popularity_tier:
@@ -87,7 +93,7 @@ def build_tier_queries(
         Whether the film has any review chunks in ``tmdb_reviews``.
     """
     common = dict(
-        target_tmdb_id=tmdb_id,
+        target_tmdb_ids=target_tmdb_ids,
         popularity_tier=popularity_tier,
         review_coverage=review_coverage,
     )

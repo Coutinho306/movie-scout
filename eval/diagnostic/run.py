@@ -426,7 +426,7 @@ def run(
         try:
             for tq in suite.queries:
                 top10, top50 = _run_query(tq.text, cfg, settings)
-                relevant = {tq.target_tmdb_id}
+                relevant = tq.target_tmdb_ids
                 acc.add(
                     config=cfg.name,
                     tier=tq.tier,

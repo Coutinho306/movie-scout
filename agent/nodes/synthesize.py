@@ -15,6 +15,55 @@ from agent.state import AgentState, RecItem
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Low-signal output gate
+# ---------------------------------------------------------------------------
+
+# Minimum cosine-similarity score (dense retrieval) for a RAG hit to be
+# considered confident.  Calibrated 2026-07-23 against golden-set queries
+# vs item-4a gibberish probes:
+#   - Dense golden queries:  P10=0.445, min top-1=0.443, mean=0.528
+#   - Gibberish top-1 max:   0.337  (clean separation margin ~0.06)
+# A floor of 0.40 keeps all golden top-1 hits above it and rejects all
+# tested gibberish probes.
+#
+# IMPORTANT — hybrid/RRF mode only: RRF scores are rank-fraction-based
+# (1/rank), not semantic distances; they cannot separate gibberish from
+# real queries (both score 0.5 at rank-1).  The floor is therefore only
+# applied when the hit was produced by dense retrieval (score < 1 on
+# cosine scale and not a pure RRF integer fraction).  In practice the
+# check is: apply the floor when the hit's score is a floating-point
+# cosine similarity (i.e. the collection's active mode is dense).
+# Hybrid hits with RRF scores are passed through (score floor skipped
+# when all top-1 hits have scores that are exact multiples of 1/(small int)).
+#
+# Simpler operational rule used below: only apply the floor when NOT all
+# rag_hits have scores that are exact RRF fractions.  If uncertain, the
+# gate skips — the valid_ids guard still blocks hallucinated tmdb_ids.
+SCORE_FLOOR: float = 0.40
+
+_DEFLECTION_ANSWER = (
+    "I couldn't find films that confidently match that. "
+    "Try rephrasing, or give me a title, genre, or vibe to anchor on."
+)
+
+
+def _is_rrf_score(score: float) -> bool:
+    """Return True if score looks like an RRF fraction (1/k for small k)."""
+    if score <= 0:
+        return False
+    for k in range(1, 100):
+        if abs(score - 1.0 / k) < 1e-4:
+            return True
+    return False
+
+
+def _hits_are_rrf_mode(rag_hits: list[dict]) -> bool:
+    """Return True if the hit set appears to come from hybrid/RRF retrieval."""
+    if not rag_hits:
+        return False
+    return all(_is_rrf_score(h.get("score", 0.0)) for h in rag_hits)
+
 
 def _build_prompt(state: AgentState, settings: AgentSettings) -> str:
     prompt_name = "synthesize" if settings.prompt_variant == "v1" else f"synthesize_{settings.prompt_variant}"
@@ -61,8 +110,40 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
     prompt = _build_prompt(state, settings)
     response = llm.invoke(prompt)
 
+    rag_hits: list[dict] = state.get("rag_hits", [])
+    rif_mode = _hits_are_rrf_mode(rag_hits)
+
+    # valid_ids: tmdb_ids from real RAG hits (blocks LLM-hallucinated ids)
+    valid_ids = {h.get("tmdb_id") for h in rag_hits}
+
+    # above_floor_ids: tmdb_ids whose hit score cleared SCORE_FLOOR.
+    # Only applied in dense mode; RRF scores cannot discriminate (see constant).
+    if not rif_mode and rag_hits:
+        above_floor_ids = {
+            h.get("tmdb_id")
+            for h in rag_hits
+            if h.get("score", 0.0) >= SCORE_FLOOR
+        }
+    else:
+        # Hybrid/RRF mode or no hits: skip floor (can't discriminate)
+        above_floor_ids = valid_ids
+
+    # Low-signal gate: if no hits cleared the floor, deflect immediately.
+    if rag_hits and not above_floor_ids:
+        logger.info(
+            "synthesize: all %d RAG hits below SCORE_FLOOR=%.2f — deflecting",
+            len(rag_hits),
+            SCORE_FLOOR,
+        )
+        tokens, cost = usage_from_message(response, cfg.model_agent)
+        return {
+            "final_answer": _DEFLECTION_ANSWER,
+            "recs": [],
+            "token_count": state.get("token_count", 0) + tokens,
+            "cost_usd": state.get("cost_usd", 0.0) + cost,
+        }
+
     recs: list[RecItem] = []
-    valid_ids = {h.get("tmdb_id") for h in state.get("rag_hits", [])}
     try:
         parsed = parser.invoke(response)
         # json_object mode may wrap the array under a key; normalize to a list.
@@ -73,7 +154,9 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
                 rec = RecItem(**item)
             except Exception:  # noqa: BLE001 — skip malformed entries
                 continue
-            if valid_ids and rec.tmdb_id not in valid_ids:
+            # Keep only hits that are both real (in valid_ids) AND above floor
+            effective_valid = above_floor_ids if above_floor_ids != valid_ids else valid_ids
+            if effective_valid and rec.tmdb_id not in effective_valid:
                 continue
             recs.append(rec)
     except Exception as exc:  # noqa: BLE001 — bad JSON yields empty recs

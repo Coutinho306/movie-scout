@@ -1,13 +1,13 @@
 {
-  "config_id": "ret_001",
-  "top_k": 5,
+  "config_id": "ret_005",
+  "top_k": 10,
   "variant": "default",
   "hybrid": false,
   "query_rewrite": true,
-  "mean_precision_at_k": 0.027586206896551727,
-  "mean_recall_at_k": 0.13793103448275862,
-  "mean_mrr": 0.1206896551724138,
-  "mean_ndcg_at_k": 0.12520447426108475,
-  "latency_p50_ms": 2201.0,
+  "mean_precision_at_k": 0.010344827586206896,
+  "mean_recall_at_k": 0.017241379310344827,
+  "mean_mrr": 0.06896551724137931,
+  "mean_ndcg_at_k": 0.02416087103748601,
+  "latency_p50_ms": 380.7,
   "cost_usd": 0.0
 }

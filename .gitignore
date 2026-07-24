@@ -78,6 +78,10 @@ eval/runs/*
 !eval/runs/rerank_retest_multirelevant.md
 !eval/runs/rerank_retest_results.json
 
+# keywords sparse eval — before/after verdict for spec 0022
+!eval/runs/keywords_sparse_eval.md
+!eval/runs/retrieval_20260724T003631.csv
+
 # planning (local only)
 specs/
 

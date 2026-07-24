@@ -16,6 +16,7 @@ from agent.tools.disambiguation import (
     resolve_year_reference,
 )
 from agent.tools.franchise import detect_franchise_ambiguity, resolve_clarification
+from agent.tools.query_scope import classify_query_scope
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +116,38 @@ def run(user_query: str, settings: AgentSettings | None = None) -> AgentRunResul
     else:
         # -----------------------------------------------------------------------
         # Phase B: first call — run detection.
-        # Branch 1: title-collision detection (inform-shaped queries).
-        # Branch 2: franchise-ambiguity detection (seed-shaped queries).
+        # Injection gate: classify the query scope before any other detection.
+        # On "injection" return a fixed refusal; never invoke the graph.
         # -----------------------------------------------------------------------
+        try:
+            scope = classify_query_scope(user_query)
+        except Exception:  # noqa: BLE001 — classifier failure must not block the run
+            logger.exception("query scope classification failed; falling through to graph run")
+            scope = "ok"
+
+        if scope == "injection":
+            logger.info(
+                json.dumps({
+                    "step": "injection_short_circuit",
+                    "query_prefix": user_query[:80],
+                })
+            )
+            refusal = (
+                "I'm a movie recommender — I can't help with that. "
+                "Ask me for film recommendations and I'll dig in."
+            )
+            return AgentRunResult(
+                final_answer=refusal,
+                citations=[],
+                tool_calls=0,
+                latency_ms=0.0,
+                cost_usd=0.0,
+                orchestrator_turns=0,
+                rag_calls=0,
+                web_calls=0,
+                needs_clarification=False,
+                clarification_question=None,
+            )
 
         # Branch 1 — collision detection (no TMDB needed, no LLM, cheap scroll)
         try:

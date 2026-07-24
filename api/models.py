@@ -26,7 +26,7 @@ class AskRequest(BaseModel):
     # the user's free-text yes/no; franchise_sibling_ids echoes the list from
     # the first AskResponse so the server can apply the exclude filter without
     # re-running detection (stateless, single-clarify-turn contract).
-    clarification_answer: str | None = None
+    clarification_answer: str | None = Field(default=None, max_length=500)
     franchise_sibling_ids: list[int] = []
 
 

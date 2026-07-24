@@ -49,12 +49,13 @@ def _make_hit(tmdb_id: int, score: float) -> dict:
     }
 
 
-def _make_rrf_hit(tmdb_id: int, rank: int) -> dict:
-    """Simulate an RRF-mode hit (score = 1/rank)."""
+def _make_rrf_hit(tmdb_id: int, rank: int, dense_score: float = 0.0) -> dict:
+    """Simulate an RRF-mode hit (score = 1/rank, dense_score = cosine proxy)."""
     return {
         "tmdb_id": tmdb_id,
         "title": f"Film {tmdb_id}",
         "score": 1.0 / rank,
+        "dense_score": dense_score,
         "overview": "A film.",
         "genres": ["Drama"],
     }
@@ -191,17 +192,22 @@ class TestScoreFloorGate:
         assert 301 in rec_ids
         assert 302 not in rec_ids
 
-    def test_rrf_mode_skips_floor(self) -> None:
-        """RRF-mode hits are not filtered by SCORE_FLOOR (non-semantic scores)."""
-        hits = [_make_rrf_hit(401, 1), _make_rrf_hit(402, 2)]
+    def test_rrf_mode_with_low_dense_score_deflects(self) -> None:
+        """RRF-mode hits with low dense_score (below floor) must now deflect.
+
+        Pre-fix: gate skipped in RRF mode, so these always passed through.
+        Post-fix (0025): gate reads dense_score even in RRF mode.
+        Hits with dense_score=0.0 (default — below SCORE_FLOOR=0.40) deflect.
+        """
+        hits = [_make_rrf_hit(401, 1), _make_rrf_hit(402, 2)]  # dense_score=0.0
         llm_recs = [
             {"tmdb_id": 401, "title": "Film 401", "year": 2022, "why_for_you": "Fine.", "provider_hint": None},
         ]
         result = self._run_with_hits(hits, llm_recs)
 
-        # Should not deflect — RRF mode passes through
-        assert result["final_answer"] != _DEFLECTION_ANSWER
-        assert len(result["recs"]) == 1
+        # Now deflects because dense_score=0.0 is below SCORE_FLOOR=0.40
+        assert result["final_answer"] == _DEFLECTION_ANSWER
+        assert result["recs"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -343,3 +349,206 @@ class TestPromptDelimiters:
         assert "</user_query>" in rendered
         assert "<rag_hits>" in rendered
         assert "</rag_hits>" in rendered
+
+
+# ---------------------------------------------------------------------------
+# AC-5: regression proof — hybrid-shaped gibberish is now caught (the fix)
+# ---------------------------------------------------------------------------
+
+
+class TestHybridGibberishRegressionProof:
+    """AC-5: hybrid-mode query with RRF scores but low dense_score → deflection.
+
+    This test FAILS against pre-fix code (gate skips in RRF mode) and PASSES
+    against the fix (gate floors dense_score even in RRF mode).
+    """
+
+    def _run_hybrid_hits(self, hits: list[dict], llm_recs: list[dict]) -> dict:
+        state = _make_state(hits, user_query=(
+            "a moody atmospheric film — something with rain and existential dread "
+            "and maybe a mystery or a ghost and quite long journeys through fog"
+        ))
+        settings = _settings()
+
+        fake_response = MagicMock()
+        fake_response.usage_metadata = {"input_tokens": 10, "output_tokens": 20}
+        fake_response.response_metadata = {}
+
+        with (
+            patch("agent.nodes.synthesize.ChatOpenAI") as MockLLM,
+            patch("agent.nodes.synthesize.JsonOutputParser") as MockParser,
+        ):
+            mock_llm = MagicMock()
+            mock_llm.invoke.return_value = fake_response
+            MockLLM.return_value = mock_llm
+
+            mock_parser = MagicMock()
+            mock_parser.invoke.return_value = llm_recs
+            MockParser.return_value = mock_parser
+
+            return synthesize_node(state, settings)
+
+    def test_hybrid_gibberish_low_dense_score_deflects(self) -> None:
+        """Narrative-shaped gibberish in hybrid mode must be caught by the gate.
+
+        The query is > 8 tokens so classify_query_mode routes it to hybrid.
+        Qdrant returns RRF scores (1/rank) but dense cosines are very low
+        (below 0.40) — just like a short gibberish in dense mode.
+        The gate must read dense_score and deflect, not pass through.
+        """
+        # RRF scores look plausible (1.0, 0.5, 0.33) but dense cosines are low
+        hits = [
+            _make_rrf_hit(901, rank=1, dense_score=0.25),
+            _make_rrf_hit(902, rank=2, dense_score=0.22),
+            _make_rrf_hit(903, rank=3, dense_score=0.19),
+        ]
+        llm_recs = [
+            {"tmdb_id": 901, "title": "Film 901", "year": 2020,
+             "why_for_you": "Atmospheric.", "provider_hint": None},
+        ]
+        result = self._run_hybrid_hits(hits, llm_recs)
+
+        assert result["recs"] == [], (
+            f"Gate failed to deflect hybrid-mode gibberish — recs: {result['recs']}"
+        )
+        assert result["final_answer"] == _DEFLECTION_ANSWER
+
+    def test_hybrid_all_hits_at_score_floor_boundary_deflects(self) -> None:
+        """Hits exactly at SCORE_FLOOR - epsilon must be below floor (deflect)."""
+        hits = [
+            _make_rrf_hit(910, rank=1, dense_score=SCORE_FLOOR - 0.01),
+            _make_rrf_hit(911, rank=2, dense_score=SCORE_FLOOR - 0.02),
+        ]
+        llm_recs = [
+            {"tmdb_id": 910, "title": "Film 910", "year": 2021,
+             "why_for_you": "Matches.", "provider_hint": None},
+        ]
+        result = self._run_hybrid_hits(hits, llm_recs)
+
+        assert result["recs"] == []
+        assert result["final_answer"] == _DEFLECTION_ANSWER
+
+
+# ---------------------------------------------------------------------------
+# AC-6a, AC-6b: no-regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestHybridNoRegression:
+    """AC-6b: hybrid-mode hits with above-floor dense_score return normal recs."""
+
+    def _run_hybrid_hits(self, hits: list[dict], llm_recs: list[dict]) -> dict:
+        state = _make_state(hits, user_query="a Crime, Thriller film — dark and tense")
+        settings = _settings()
+
+        fake_response = MagicMock()
+        fake_response.usage_metadata = {"input_tokens": 10, "output_tokens": 20}
+        fake_response.response_metadata = {}
+
+        with (
+            patch("agent.nodes.synthesize.ChatOpenAI") as MockLLM,
+            patch("agent.nodes.synthesize.JsonOutputParser") as MockParser,
+        ):
+            mock_llm = MagicMock()
+            mock_llm.invoke.return_value = fake_response
+            MockLLM.return_value = mock_llm
+
+            mock_parser = MagicMock()
+            mock_parser.invoke.return_value = llm_recs
+            MockParser.return_value = mock_parser
+
+            return synthesize_node(state, settings)
+
+    def test_hybrid_above_floor_dense_score_yields_normal_recs(self) -> None:
+        """Real hybrid queries with above-floor dense_score must not be over-rejected."""
+        hits = [
+            _make_rrf_hit(501, rank=1, dense_score=0.55),
+            _make_rrf_hit(502, rank=2, dense_score=0.50),
+        ]
+        llm_recs = [
+            {"tmdb_id": 501, "title": "Film 501", "year": 2019,
+             "why_for_you": "Great match.", "provider_hint": None},
+            {"tmdb_id": 502, "title": "Film 502", "year": 2018,
+             "why_for_you": "Also good.", "provider_hint": None},
+        ]
+        result = self._run_hybrid_hits(hits, llm_recs)
+
+        assert result["final_answer"] != _DEFLECTION_ANSWER
+        rec_ids = [r["tmdb_id"] for r in result["recs"]]
+        assert 501 in rec_ids
+        assert 502 in rec_ids
+
+    def test_hybrid_mixed_dense_score_only_above_floor_survive(self) -> None:
+        """In hybrid mode, only hits with dense_score >= SCORE_FLOOR survive the gate."""
+        hits = [
+            _make_rrf_hit(601, rank=1, dense_score=0.55),  # above floor
+            _make_rrf_hit(602, rank=2, dense_score=0.25),  # below floor
+        ]
+        llm_recs = [
+            {"tmdb_id": 601, "title": "Film 601", "year": 2020,
+             "why_for_you": "Good.", "provider_hint": None},
+            {"tmdb_id": 602, "title": "Film 602", "year": 2021,
+             "why_for_you": "Weak.", "provider_hint": None},
+        ]
+        result = self._run_hybrid_hits(hits, llm_recs)
+
+        rec_ids = [r["tmdb_id"] for r in result["recs"]]
+        assert 601 in rec_ids, "above-floor hybrid hit should survive"
+        assert 602 not in rec_ids, "below-floor hybrid hit should be filtered"
+
+
+class TestDenseModeGateUnchanged:
+    """AC-6a: existing dense-mode gate tests still pass unchanged after the fix."""
+
+    def _run_with_hits(self, hits: list[dict], llm_recs: list[dict]) -> dict:
+        state = _make_state(hits)
+        settings = _settings()
+
+        fake_response = MagicMock()
+        fake_response.usage_metadata = {"input_tokens": 10, "output_tokens": 20}
+        fake_response.response_metadata = {}
+
+        with (
+            patch("agent.nodes.synthesize.ChatOpenAI") as MockLLM,
+            patch("agent.nodes.synthesize.JsonOutputParser") as MockParser,
+        ):
+            mock_llm = MagicMock()
+            mock_llm.invoke.return_value = fake_response
+            MockLLM.return_value = mock_llm
+
+            mock_parser = MagicMock()
+            mock_parser.invoke.return_value = llm_recs
+            MockParser.return_value = mock_parser
+
+            return synthesize_node(state, settings)
+
+    def test_dense_all_below_floor_deflects(self) -> None:
+        """Dense-mode: all hits below SCORE_FLOOR still triggers deflection."""
+        hits = [
+            _make_hit(701, SCORE_FLOOR - 0.05),
+            _make_hit(702, SCORE_FLOOR - 0.10),
+        ]
+        llm_recs = [
+            {"tmdb_id": 701, "title": "Film 701", "year": 2020,
+             "why_for_you": "OK.", "provider_hint": None},
+        ]
+        result = self._run_with_hits(hits, llm_recs)
+
+        assert result["recs"] == []
+        assert result["final_answer"] == _DEFLECTION_ANSWER
+
+    def test_dense_above_floor_yields_normal_recs(self) -> None:
+        """Dense-mode: above-floor hits still produce normal recs unchanged."""
+        hits = [
+            _make_hit(801, SCORE_FLOOR + 0.10),
+            _make_hit(802, SCORE_FLOOR + 0.05),
+        ]
+        llm_recs = [
+            {"tmdb_id": 801, "title": "Film 801", "year": 2021,
+             "why_for_you": "Good.", "provider_hint": None},
+        ]
+        result = self._run_with_hits(hits, llm_recs)
+
+        assert result["final_answer"] != _DEFLECTION_ANSWER
+        assert len(result["recs"]) == 1
+        assert result["recs"][0]["tmdb_id"] == 801

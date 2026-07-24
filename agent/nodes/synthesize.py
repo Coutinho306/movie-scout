@@ -19,27 +19,20 @@ logger = logging.getLogger(__name__)
 # Low-signal output gate
 # ---------------------------------------------------------------------------
 
-# Minimum cosine-similarity score (dense retrieval) for a RAG hit to be
-# considered confident.  Calibrated 2026-07-23 against golden-set queries
-# vs item-4a gibberish probes:
+# Minimum cosine-similarity score for a RAG hit to be considered confident.
+# Calibrated 2026-07-23 against golden-set queries vs item-4a gibberish probes:
 #   - Dense golden queries:  P10=0.445, min top-1=0.443, mean=0.528
 #   - Gibberish top-1 max:   0.337  (clean separation margin ~0.06)
 # A floor of 0.40 keeps all golden top-1 hits above it and rejects all
 # tested gibberish probes.
 #
-# IMPORTANT — hybrid/RRF mode only: RRF scores are rank-fraction-based
-# (1/rank), not semantic distances; they cannot separate gibberish from
-# real queries (both score 0.5 at rank-1).  The floor is therefore only
-# applied when the hit was produced by dense retrieval (score < 1 on
-# cosine scale and not a pure RRF integer fraction).  In practice the
-# check is: apply the floor when the hit's score is a floating-point
-# cosine similarity (i.e. the collection's active mode is dense).
-# Hybrid hits with RRF scores are passed through (score floor skipped
-# when all top-1 hits have scores that are exact multiples of 1/(small int)).
-#
-# Simpler operational rule used below: only apply the floor when NOT all
-# rag_hits have scores that are exact RRF fractions.  If uncertain, the
-# gate skips — the valid_ids guard still blocks hallucinated tmdb_ids.
+# In hybrid/RRF mode, MovieHit.score is a rank-fraction (1/rank), not a cosine
+# distance, and cannot separate gibberish from real queries.  The gate therefore
+# reads MovieHit.dense_score (the raw cosine vs query_vec computed client-side
+# in retrieval/movies.py from the vectors already returned by with_vectors=True)
+# when hits are RRF-shaped.  dense_score is calibrated on the same cosine scale,
+# so the same 0.40 floor applies unchanged (confirmed by AC-7 spot-check in
+# specs/0025-hybrid-rrf-score-floor-fix/STATUS.md).
 SCORE_FLOOR: float = 0.40
 
 _DEFLECTION_ANSWER = (
@@ -116,16 +109,19 @@ def synthesize_node(state: AgentState, settings: AgentSettings) -> dict:
     # valid_ids: tmdb_ids from real RAG hits (blocks LLM-hallucinated ids)
     valid_ids = {h.get("tmdb_id") for h in rag_hits}
 
-    # above_floor_ids: tmdb_ids whose hit score cleared SCORE_FLOOR.
-    # Only applied in dense mode; RRF scores cannot discriminate (see constant).
-    if not rif_mode and rag_hits:
+    # above_floor_ids: tmdb_ids whose hit cleared SCORE_FLOOR.
+    # In dense mode, floor is checked against the cosine `score`.
+    # In hybrid/RRF mode, `score` is a rank-fraction and cannot discriminate;
+    # `dense_score` (raw cosine vs query_vec, computed client-side in
+    # retrieval/movies.py) is used instead — same cosine scale, same floor.
+    score_key = "dense_score" if rif_mode else "score"
+    if rag_hits:
         above_floor_ids = {
             h.get("tmdb_id")
             for h in rag_hits
-            if h.get("score", 0.0) >= SCORE_FLOOR
+            if h.get(score_key, 0.0) >= SCORE_FLOOR
         }
     else:
-        # Hybrid/RRF mode or no hits: skip floor (can't discriminate)
         above_floor_ids = valid_ids
 
     # Low-signal gate: if no hits cleared the floor, deflect immediately.

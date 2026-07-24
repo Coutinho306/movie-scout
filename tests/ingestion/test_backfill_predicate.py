@@ -26,6 +26,6 @@ def test_current_tagged_point_is_skipped() -> None:
     assert _already_tagged_current_recipe(payload)
 
 
-def test_current_recipe_constant_is_enriched_base() -> None:
-    """The recipe constant must be 'enriched-base' (AC-3)."""
-    assert _SPARSE_TEXT_RECIPE == "enriched-base"
+def test_current_recipe_constant_is_enriched_base_kw() -> None:
+    """The recipe constant must be 'enriched-base-kw' after Phase 3 keywords bump (AC-3/AC-4)."""
+    assert _SPARSE_TEXT_RECIPE == "enriched-base-kw"

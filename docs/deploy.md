@@ -61,8 +61,6 @@ railway up
 | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY` | api | optional LangSmith traces |
 
 ## Notes
-- The API image preloads the cross-encoder rerank model at build, so the first
-  request isn't slow.
 - **Grafana**: the local compose runs Grafana with anonymous Viewer access for
   convenience. Do **not** expose that publicly — if you deploy Grafana, set
   `GF_AUTH_ANONYMOUS_ENABLED=false` and a strong `GF_SECURITY_ADMIN_PASSWORD`

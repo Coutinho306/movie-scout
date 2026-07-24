@@ -159,6 +159,9 @@ original `ms-marco-MiniLM-L-6-v2` and a short-text candidate swap
 query bucket. The real bottleneck is a recall gap (~0.14 @k5): the right
 films are frequently not in the candidate pool, so reordering cannot help.
 Full numbers and verdict are in [`eval/runs/rerank_eval.md`](eval/runs/rerank_eval.md).
+Re-tested after the BM25 keywords upgrade (below) in case the wider keyword-boosted
+candidate pool changed the calculus — it didn't: still a net loss on every config.
+See [`eval/runs/rerank_retest_post_keywords.md`](eval/runs/rerank_retest_post_keywords.md).
 
 ## Eval
 

@@ -153,6 +153,20 @@ genre/cast-word queries (tier 2, +0.396 nDCG) but ties or dilutes on exact
 titles and abstract queries — so a query-aware router beats a fixed on/off
 setting, and that's what ships.
 
+`classify_query_mode` (`agent/tools/query_mode.py`) is a deterministic
+regex/lexical classifier — no LLM call — mapping each query shape to a tier:
+
+| Tier | Query shape | Example | Mode |
+|---|---|---|---|
+| 0 | Verbatim title, ≤4 tokens, no genre/sentence structure | `"Knives Out"` | dense |
+| 1 | Narrative/overview sentence, >8 tokens | `"A detective investigates his wealthy patriarch's death..."` | hybrid |
+| 2 | Templated `"a/an ... film — mood"` shape (genre + structure) | `"a heist film — stylish and tense"` | hybrid |
+| 3 | Conversational/abstract request prefix | `"I'm looking for something uplifting"` | dense |
+
+Dense-biased on uncertainty: an unmatched shape defaults to dense, since a
+false "hybrid" on an abstract query costs more recall than a false "dense"
+merely forgoes lift.
+
 **Re-ranking (cross-encoder) was removed.** Two models were measured — the
 original `ms-marco-MiniLM-L-6-v2` and a short-text candidate swap
 `stsb-distilroberta-base` — and both were a net loss on nDCG across every

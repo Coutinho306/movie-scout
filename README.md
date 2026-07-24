@@ -281,11 +281,3 @@ LLM traces go to [LangSmith](https://smith.langchain.com) — set
 `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in `.env` (already wired by
 the agent). Open the `movie_scout` project to inspect a run's node graph, token
 usage, and latency per step.
-
-## Deploy
-
-The API and UI deploy to [Railway](https://railway.app) (managed Postgres +
-Qdrant Cloud). Full steps, env-var table, and the `railway.json` build config are
-in [`docs/deploy.md`](docs/deploy.md).
-
-<!-- Live demo URL + screenshot added after first deploy. -->

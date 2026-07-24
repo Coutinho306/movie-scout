@@ -81,6 +81,8 @@ eval/runs/*
 # keywords sparse eval — before/after verdict for spec 0022
 !eval/runs/keywords_sparse_eval.md
 !eval/runs/retrieval_20260724T003631.csv
+# rerank re-test post-keywords verdict (spec 0024)
+!eval/runs/rerank_retest_post_keywords.md
 
 # planning (local only)
 specs/

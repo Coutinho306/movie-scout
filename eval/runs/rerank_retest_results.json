@@ -5,12 +5,12 @@
     "hybrid": false,
     "query_rewrite": false,
     "variant": "default",
-    "baseline_ndcg": 0.0104,
-    "rerank_ndcg": 0.0058,
-    "delta_ndcg": -0.0045,
+    "baseline_ndcg": 0.0101,
+    "rerank_ndcg": 0.0074,
+    "delta_ndcg": -0.0027,
     "baseline_recall": 0.0115,
     "rerank_recall": 0.0057,
-    "elapsed_s": 78.8
+    "elapsed_s": 88.1
   },
   {
     "config_id": "ret_001",
@@ -18,12 +18,12 @@
     "hybrid": false,
     "query_rewrite": true,
     "variant": "default",
-    "baseline_ndcg": 0.0279,
-    "rerank_ndcg": 0.005,
-    "delta_ndcg": -0.0229,
-    "baseline_recall": 0.0172,
+    "baseline_ndcg": 0.0234,
+    "rerank_ndcg": 0.0045,
+    "delta_ndcg": -0.0189,
+    "baseline_recall": 0.0115,
     "rerank_recall": 0.0057,
-    "elapsed_s": 133.2
+    "elapsed_s": 127.1
   },
   {
     "config_id": "ret_002",
@@ -31,12 +31,12 @@
     "hybrid": true,
     "query_rewrite": false,
     "variant": "default",
-    "baseline_ndcg": 0.0,
+    "baseline_ndcg": 0.005,
     "rerank_ndcg": 0.0,
-    "delta_ndcg": 0.0,
-    "baseline_recall": 0.0,
+    "delta_ndcg": -0.005,
+    "baseline_recall": 0.0057,
     "rerank_recall": 0.0,
-    "elapsed_s": 76.2
+    "elapsed_s": 69.3
   },
   {
     "config_id": "ret_003",
@@ -44,12 +44,12 @@
     "hybrid": true,
     "query_rewrite": true,
     "variant": "default",
-    "baseline_ndcg": 0.0234,
+    "baseline_ndcg": 0.0191,
     "rerank_ndcg": 0.0,
-    "delta_ndcg": -0.0234,
+    "delta_ndcg": -0.0191,
     "baseline_recall": 0.0115,
     "rerank_recall": 0.0,
-    "elapsed_s": 75.0
+    "elapsed_s": 72.1
   },
   {
     "config_id": "ret_004",
@@ -57,12 +57,12 @@
     "hybrid": false,
     "query_rewrite": false,
     "variant": "default",
-    "baseline_ndcg": 0.0093,
-    "rerank_ndcg": 0.0052,
-    "delta_ndcg": -0.004,
+    "baseline_ndcg": 0.009,
+    "rerank_ndcg": 0.0066,
+    "delta_ndcg": -0.0024,
     "baseline_recall": 0.0115,
     "rerank_recall": 0.0057,
-    "elapsed_s": 65.3
+    "elapsed_s": 65.6
   },
   {
     "config_id": "ret_005",
@@ -70,12 +70,12 @@
     "hybrid": false,
     "query_rewrite": true,
     "variant": "default",
-    "baseline_ndcg": 0.0313,
-    "rerank_ndcg": 0.0045,
-    "delta_ndcg": -0.0268,
-    "baseline_recall": 0.0287,
-    "rerank_recall": 0.0057,
-    "elapsed_s": 72.9
+    "baseline_ndcg": 0.0209,
+    "rerank_ndcg": 0.0071,
+    "delta_ndcg": -0.0138,
+    "baseline_recall": 0.0115,
+    "rerank_recall": 0.0115,
+    "elapsed_s": 69.8
   },
   {
     "config_id": "ret_006",
@@ -83,12 +83,12 @@
     "hybrid": true,
     "query_rewrite": false,
     "variant": "default",
-    "baseline_ndcg": 0.0069,
-    "rerank_ndcg": 0.0,
-    "delta_ndcg": -0.0069,
+    "baseline_ndcg": 0.0078,
+    "rerank_ndcg": 0.0033,
+    "delta_ndcg": -0.0045,
     "baseline_recall": 0.0115,
-    "rerank_recall": 0.0,
-    "elapsed_s": 73.7
+    "rerank_recall": 0.0057,
+    "elapsed_s": 66.7
   },
   {
     "config_id": "ret_007",
@@ -96,11 +96,11 @@
     "hybrid": true,
     "query_rewrite": true,
     "variant": "default",
-    "baseline_ndcg": 0.02,
+    "baseline_ndcg": 0.0209,
     "rerank_ndcg": 0.0,
-    "delta_ndcg": -0.02,
-    "baseline_recall": 0.0172,
+    "delta_ndcg": -0.0209,
+    "baseline_recall": 0.0115,
     "rerank_recall": 0.0,
-    "elapsed_s": 75.6
+    "elapsed_s": 79.4
   }
 ]

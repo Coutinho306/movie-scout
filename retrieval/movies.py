@@ -378,7 +378,6 @@ def recommend_similar(
     limit = k if k is not None else settings.top_k
     client = get_qdrant_client()
 
-    # Step 1: find the seed's point id by filtering payload tmdb_id.
     seed_filter = Filter(
         must=[
             FieldCondition(
@@ -403,7 +402,6 @@ def recommend_similar(
 
     seed_point_id = records[0].id
 
-    # Step 2: retrieve the seed point with its stored dense vector.
     retrieved = client.retrieve(
         collection_name=collection,
         ids=[seed_point_id],
@@ -424,7 +422,6 @@ def recommend_similar(
         )
         return []
 
-    # Step 3: build exclusion set — seed always excluded.
     exclude_ids: set[int] = {seed_tmdb_id}
     if filters and filters.exclude_tmdb_ids:
         exclude_ids |= filters.exclude_tmdb_ids
@@ -449,7 +446,6 @@ def recommend_similar(
 
     hits = [_point_to_hit(p) for p in results]
 
-    # Post-fetch exclusion (same pattern as search_movies).
     hits = [h for h in hits if h.tmdb_id not in exclude_ids]
 
     return hits

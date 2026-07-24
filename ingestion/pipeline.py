@@ -177,11 +177,7 @@ def run_pipeline(
             collection_name=settings.movies_collection,
             explicit_tmdb_ids=explicit_tmdb_ids,
             embed_text_recipe=settings.embed_text_recipe,
-            # tmdb_movies always has a sparse "text" vector field (ensure_collections
-            # above), so every point must write one too, regardless of the sparse
-            # variant-naming flag (settings.sparse only controls the "_bm25" collection
-            # suffix, not whether the schema/write path support sparse — it always does).
-            sparse=True,
+            sparse=True,  # see ensure_collections call below for why this is always True
             resume=resume,
             workers=workers,
         )

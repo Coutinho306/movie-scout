@@ -2,25 +2,21 @@
 
 Callers must supply the profile explicitly. ``profile=None`` is handled at the
 call site (``match_taste_tool``) as cold start — these functions require a
-non-None profile. The ``_TASTE_PROFILE_PATH`` constant and
-``load_taste_profile`` are retained for the offline script and tests only;
-they are **not** used on the serving path.
+non-None profile. The ``_TASTE_PROFILE_PATH`` constant is retained for tests
+only; it is **not** used on the serving path (``load_taste_profile`` lives in
+``ingestion/scripts/compute_taste.py``, not here).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ingestion.models import TasteProfile
 from retrieval.models import MovieHit
 
-if TYPE_CHECKING:
-    pass
-
-# Retained for offline script + tests only. NOT loaded on the serving path.
+# Retained for tests only. NOT loaded on the serving path.
 _TASTE_PROFILE_PATH = Path("data/taste_profile.json")
 
 

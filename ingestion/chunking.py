@@ -33,7 +33,7 @@ def chunk_review(
 def _build_keywords_text(metadata: TmdbMovieMetadata) -> str:
     """Return the keywords-recipe embed text (factored for reuse by themes recipe)."""
     genres = ", ".join(metadata.genres)
-    cast = ", ".join(metadata.cast[:5])  # top 5
+    cast = ", ".join(metadata.cast[:5])
     text = (
         f"{metadata.title} ({metadata.year}). "
         f"Genres: {genres}. "
@@ -65,7 +65,7 @@ def build_movie_embed_text(
         return text
 
     genres = ", ".join(metadata.genres)
-    cast = ", ".join(metadata.cast[:5])  # top 5
+    cast = ", ".join(metadata.cast[:5])
     text = (
         f"{metadata.title} ({metadata.year}). "
         f"Genres: {genres}. "

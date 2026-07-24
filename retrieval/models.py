@@ -12,9 +12,15 @@ class MovieHit(BaseModel):
     overview: str
     genres: list[str]
     vote_average: float
-    score: float  # vector similarity score
+    score: float  # vector similarity score (RRF rank-fraction in hybrid mode)
     taste_score: float = 0.0
     blended_score: float = 0.0
+    # Raw dense cosine similarity vs query_vec, computed client-side in
+    # search_movies from the vectors already returned by with_vectors=True.
+    # Serializable (NOT exclude=True) so it survives model_dump() into rag_hits.
+    # Used by the synthesize gate to floor-check even in hybrid/RRF mode where
+    # MovieHit.score is an uninterpretable rank-fraction, not a cosine distance.
+    dense_score: float = 0.0
     # Dense embedding, populated when with_vectors=True. exclude=True keeps it
     # out of every model_dump()/json() — it's for internal scoring math only,
     # and ~1536 floats serialized into an LLM tool result blows the context.

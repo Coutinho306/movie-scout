@@ -6,6 +6,8 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from qdrant_client.http.models.models import FusionQuery
 from qdrant_client.models import (
     FieldCondition,
@@ -327,6 +329,21 @@ def search_movies(
         ).points
 
     hits = [_point_to_hit(p) for p in results]
+
+    # Compute dense_score for every hit: raw cosine of query_vec vs hit.vector.
+    # Runs on both dense and hybrid branches — provides a uniform semantic signal
+    # that the synthesize gate can floor-check in any retrieval mode.
+    # Vectors are already in-hand (with_vectors=True on every branch); no extra
+    # Qdrant call is issued.  None-vector or zero-norm → safe-low 0.0.
+    qv = np.asarray(query_vec, dtype=float)
+    qn = float(np.linalg.norm(qv))
+    for h in hits:
+        if h.vector is not None and qn > 0:
+            v = np.asarray(h.vector, dtype=float)
+            vn = float(np.linalg.norm(v))
+            h.dense_score = float(qv @ v / (qn * vn)) if vn > 0 else 0.0
+        else:
+            h.dense_score = 0.0
 
     # Post-fetch exclusion: Qdrant KEYWORD index on integer tmdb_id doesn't
     # support MatchExcept reliably, so we filter in Python.
